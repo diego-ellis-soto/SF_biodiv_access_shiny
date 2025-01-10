@@ -5,8 +5,9 @@ account: diego-ellis-soto
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 13693040
-bundleId: 9630454
+bundleId: 9631125
 url: https://diego-ellis-soto.shinyapps.io/RSF_Biodiversity_Access/
 version: 1
 asMultiple: FALSE
 asStatic: FALSE
+ignoredFiles: app_old.R
