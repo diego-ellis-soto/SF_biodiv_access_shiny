@@ -55,17 +55,33 @@ ui <- dashboardPage(
     useShinyjs(),  
     # Loading message
     div(id = "loading", style = "display:none; font-size: 20px; color: red;", "Calculating..."),
-    fluidRow(
+    
+    
+    # fluidPage(
+    #   # Application title
+    #   # titlePanel("Test app"),
+    #   # to render images in the www folder 
+    #   box(uiOutput("houz"), width = 3)
+    # ),
+    
+    # 
+    fluidPage(
       column(
         width = 12, align = "center",
-        tags$img(src = "www/UC_Berkeley_logo.png",
+        tags$img(src = "UC_Berkeley_logo.png",
                  height = "200px", style = "margin:10px;", alt = "UC Berkeley Logo"),
-        tags$img(src = "www/California_academy_logo.png",
+        tags$img(src = "California_academy_logo.png",
                  height = "200px", style = "margin:10px;", alt = "California Academy Logo"),
-        tags$img(src = "www/Reimagining_San_Francisco.png",
+        tags$img(src = "Reimagining_San_Francisco.png",
                  height = "200px", style = "margin:10px;", alt = "Reimagining San Francisco Logo")
       )
     ),
+    # fluidPage(
+    #   box(
+    #     tags$img(height = 100, width = 100,src = "Rlogo.png"),
+    #     imageOutput('image_logos')
+    #   )
+    # ),
 
     # Tab Items
     tabItems(
@@ -993,6 +1009,8 @@ server <- function(input, output, session) {
       )
   })
   
+  
+  
   # ------------------------------------------------
   # [Optional: Linear Model Plot (Commented Out)]
   # ------------------------------------------------
@@ -1015,7 +1033,55 @@ server <- function(input, output, session) {
   #   p <- plot_model(fit, show.values = TRUE, value.offset = .3, title = "LM Coefficients: n_species ~ n_observations + median_inc + ndvi_mean")
   #   print(p)
   # })
+
+
+# 
+# # Add Images:
+# df_img = data.frame(id = c(1:3), img_path=c('California_academy_logo.png', 'Reimagining_San_Francisco.png', 'UC Berkeley_logo.png'))
+# n <- nrow(df_img)
+# 
+# n <- nrow(df_img)
+# 
+# observe({
+#   for (i in 1:n)
+#   {
+#     print(i)
+#     local({
+#       my_i <- i
+#       imagename = paste0("img", my_i)
+#       print(imagename)
+#       output[[imagename]] <-
+#         renderImage({
+#           list(src = file.path('www', df_img$img_path[my_i]), 
+#                width = "100%", height = "55%",
+#                alt = "Image failed to render")
+#         }, deleteFile = FALSE)
+#     })
+#   }
+# })
+# 
+# 
+# output$houz <- renderUI({
+#   
+#   image_output_list <- 
+#     lapply(1:n,
+#            function(i)
+#            {
+#              imagename = paste0("img", i)
+#              imageOutput(imagename)
+#            })
+#   
+#   do.call(tagList, image_output_list)
+# })
+
+
 }
+
+
 
 # Run the Shiny app
 shinyApp(ui, server)
+
+# 
+
+
