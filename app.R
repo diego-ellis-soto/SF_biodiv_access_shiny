@@ -56,12 +56,20 @@ ui <- dashboardPage(
     # Loading message
     div(id = "loading", style = "display:none; font-size: 20px; color: red;", "Calculating..."),
     
-    fluidRow(
-      column(
-        width = 2,
-        imageOutput("Combined_logos")
-      )
-    ),
+    # fluidRow(
+    #   column(
+    #     width = 2,
+    #     imageOutput("Combined_logos")
+    #   )
+    # ),
+    
+    # fluidPage(
+    #   box(
+    #     tags$img(height = 100, width = 100,src = "Combined_logos.png"),
+    #     imageOutput('Combined_logos')
+    #   )
+    # ),
+    
     
     # fluidRow(
     #   column(

@@ -14,7 +14,7 @@ This Shiny app provides decision support for the **Reimagining San Francisco Ini
 - Calculates and overlays **NDVI** for vegetation analysis.
 - Summarizes biodiversity records from **GBIF** and identifies species richness, greenspace, and socio-economic patterns.
 
-![Combined Logos](www/combined_logos.png)
+![Combined Logos](www/Combined_logos.png)
 
 ---
 
@@ -65,3 +65,4 @@ Future plans include integrating public transportation accessibility to further 
 
 ---
 
+![Combined Logos](www/hexbin_RSF_logo.png)
