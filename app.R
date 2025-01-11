@@ -60,7 +60,8 @@ ui <- dashboardPage(
       column(
         width = 2,
         imageOutput("Combined_logos")
-      ),
+      )
+    ),
     
     # fluidRow(
     #   column(
