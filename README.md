@@ -65,4 +65,4 @@ Future plans include integrating public transportation accessibility to further 
 
 ---
 
-![Combined Logos](www/hexbin_RSF_logo.png){width=33%}
+![Combined Logos](www/hexbin_RSF_logo.png){width=100px}
