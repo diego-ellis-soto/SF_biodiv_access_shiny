@@ -8,6 +8,11 @@ It further calculates a summary table of the GBIF data located within the isochr
 
 # Next steps: Optimize preanno of sf gbif and cbg
 
+Add Imp Surf, Walking Scores, SVI to cbg_sf
+
 # Public transport ddata
 
+Calculate accessability matrix for SF
+
 # Show difference on the day
+

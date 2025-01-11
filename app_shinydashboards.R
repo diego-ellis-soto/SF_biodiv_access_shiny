@@ -1,24 +1,12 @@
-# Get working directory, perhaps shiny apps is not receiving the data and the www? 
-# rsconnect::setAccountInfo(name='diego-ellis-soto', token='A47BE3C9E4B9EBCDFEC889AF31F64154', secret='g2Q2rxeYCiwlH81EkPXcCGsiHMgdyhTznJRmHtea')
-# deployApp()
-# Add that you can hover over the greespace and get its name
-# Improve the titles of the ggplots of the model coefficient estimates and of ggplot using the gbif summary table on data avialability vs species richness. Also log transform these values for better data visualization 
-# Also the ggplot of  data avialability vs species richness. should also update if the user decides to subset by class or family. Until then, its okay to retain the general plot using all the data from gbif_sf
-
-# Optimize some calculations? Shorten 
-
-
-
-
-
 ###############################################################################
 # Shiny App: San Francisco Biodiversity Access Decision Support Tool
 # Author: Diego Ellis Soto, et al.
 # University of California Berkeley, ESPM
 # California Academy of Sciences
 ###############################################################################
-
+require(shinyjs)
 library(shiny)
+library(shinydashboard)
 library(leaflet)
 library(mapboxapi)
 library(tidyverse)
@@ -31,296 +19,245 @@ library(data.table)  # for fread
 library(mapview)     # for mapview objects
 library(sjPlot)      # for plotting lm model coefficients
 library(sjlabelled)  # optional if needed for sjPlot
+library(bslib)
+library(shinycssloaders)
 
-# ------------------------------------------------
-# 1) API Keys
-# ------------------------------------------------
+source('R/setup.R') # Ensure this script loads necessary data objects
+
+# Define your Mapbox token securely
 mapbox_token <- "pk.eyJ1Ijoia3dhbGtlcnRjdSIsImEiOiJjbHc3NmI0cDMxYzhyMmt0OXBiYnltMjVtIn0.Thtu6WqIhOfin6AykskM2g" 
-mb_access_token(mapbox_token, install = FALSE)
 
-# ------------------------------------------------
-# 2) Load Data
-# ------------------------------------------------
-# -- Greenspace
-getwd()
-osm_greenspace <- st_read("data/greenspaces_osm_nad83.shp", quiet = TRUE) %>%
-  st_transform(4326)
-if (!"name" %in% names(osm_greenspace)) {
-  osm_greenspace$name <- "Unnamed Greenspace"
-}
+# Global theme definition using a green-themed bootswatch
+theme <- bs_theme(
+  bootswatch = "minty", # 'minty' is a light green-themed bootswatch
+  base_font = font_google("Roboto"),
+  heading_font = font_google("Roboto Slab"),
+  bg = "#f0fff0",       # Honeydew background
+  fg = "#2e8b57"        # SeaGreen foreground
+)
 
-# -- NDVI Raster
-ndvi <- rast("data/SF_EastBay_NDVI_Sentinel_10.tif")
-
-# -- GBIF data
-# Load what is basically inter_gbif !!!!! 
-# load("data/sf_gbif.Rdata")  # => sf_gbif
-load('data/gbif_census_ndvi_anno.Rdata')
-vect_gbif <- vect(sf_gbif)
-# -- Precomputed CBG data
-load('data/cbg_vect_sf.Rdata')
-if (!"unique_species" %in% names(cbg_vect_sf)) {
-  cbg_vect_sf$unique_species <- cbg_vect_sf$n_species
-}
-if (!"n_observations" %in% names(cbg_vect_sf)) {
-  cbg_vect_sf$n_observations <- cbg_vect_sf$n
-}
-if (!"median_inc" %in% names(cbg_vect_sf)) {
-  cbg_vect_sf$median_inc <- cbg_vect_sf$medincE
-}
-if (!"ndvi_mean" %in% names(cbg_vect_sf)) {
-  cbg_vect_sf$ndvi_mean <- cbg_vect_sf$ndvi_sentinel
-}
-
-# -- Hotspots/Coldspots
-biodiv_hotspots  <- st_read("data/hotspots.shp",  quiet = TRUE) %>% st_transform(4326)
-biodiv_coldspots <- st_read("data/coldspots.shp", quiet = TRUE) %>% st_transform(4326)
-
-# ------------------------------------------------
-# 3) UI
-# ------------------------------------------------
-ui <- fluidPage(
-  titlePanel("San Francisco Biodiversity Access Decision Support Tool"),
-  
-  fluidRow(
-    column(
-      width = 12, align = "center",
-      tags$img(src = "UC Berkeley_logo.png", 
-               height = "120px", style = "margin:10px;"),
-      tags$img(src = "California_academy_logo.png", 
-               height = "120px", style = "margin:10px;"),
-      tags$img(src = "Reimagining_San_Francisco.png", 
-               height = "120px", style = "margin:10px;")
+# UI
+ui <- dashboardPage(
+  skin = "green", # shinydashboard skin color
+  dashboardHeader(title = "SF Biodiversity Access Tool"),
+  dashboardSidebar(
+    sidebarMenu(
+      menuItem("Isochrone Explorer", tabName = "isochrone", icon = icon("map-marker-alt")),
+      menuItem("GBIF Summaries", tabName = "gbif", icon = icon("table")),
+      menuItem("Community Science", tabName = "community_science", icon = icon("users")),
+      menuItem("About", tabName = "about", icon = icon("info-circle"))
     )
   ),
-  
-  fluidRow(
-    column(
-      width = 12,
-      br(),
-      p("This application demonstrates an approach for exploring biodiversity access in San Francisco..."),
-      # (Your summary text can go here)
-    )
-  ),
-  br(),
-  fluidRow(
-    column(
-      width = 12,
-      br(),
-      tags$b("App Summary (Fill out with RSF data working group):"),
-      # Increasingly, we ask ourselves about what increasing access to biodiversity really means. 
-      #    Importantly, accessibility differs from human mobility in urban planning studies for equitable transportation systems.
-      p("
-        This application allows users to either click on a map or geocode an address (in progress) 
-         to generate travel-time isochrones across multiple transportation modes (e.g., pedestrian, cycling, driving, driving during traffic).
-         It retrieves socio-economic data from precomputed Census variables, calculates NDVI, 
-         and summarizes biodiversity records from GBIF. We explore what biodiversity access means
-         Users can explore information that we often relate to biodiversity in urban environments including greenspace coverage, population estimates, and species diversity within each isochrone."),
-      
-      tags$b("Created by:"),
-      p(strong("Diego Ellis Soto", "Carl Boettiger, Rebecca Johnson, Christopher J. Schell")),
-      
-      p("Contact Information", 
-        strong("diego.ellissoto@berkeley.edu"))
-
-    )
-  ),
-  br(),
-  
-  tabsetPanel(
+  dashboardBody(
+    theme = theme, # Apply the custom theme
+    useShinyjs(),  # Initialize shinyjs
+    # Loading message
+    div(id = "loading", style = "display:none; font-size: 20px; color: red;", "Calculating..."),
     
-    # 1) Isochrone Explorer
-    tabPanel("Isochrone Explorer",
-             sidebarLayout(
-               sidebarPanel(
-                 radioButtons(
-                   "location_choice", 
-                   "Select how to choose your location:",
-                   choices = c("Address (Geocode)" = "address", 
-                               "Click on Map"      = "map_click"),
-                   selected = "map_click"  
-                 ),
-                 
-                 conditionalPanel(
-                   condition = "input.location_choice == 'address'",
-                   textInput(
-                     "user_address", 
-                     "Enter Address:", 
-                     value = "", 
-                     placeholder = "e.g., 1600 Amphitheatre Parkway, Mountain View, CA"
-                   )
-                 ),
-                 
-                 checkboxGroupInput(
-                   "transport_modes", 
-                   "Select Transportation Modes:",
-                   choices = list("Driving"             = "driving",
-                                  "Walking"             = "walking",
-                                  "Cycling"             = "cycling",
-                                  "Driving with Traffic"= "driving-traffic"),
-                   selected = c("driving", "walking")
-                 ),
-                 
-                 checkboxGroupInput(
-                   "iso_times", 
-                   "Select Isochrone Times (minutes):",
-                   choices = list("5" = 5, "10" = 10, "15" = 15),
-                   selected = c(5, 10)
-                 ),
-                 
-                 actionButton("generate_iso", "Generate Isochrones"),
-                 actionButton("clear_map", "Clear")
-                 
-               ),
-               
-               mainPanel(
-                 leafletOutput("isoMap", height = 600),
-                 
-                 fluidRow(
-                   column(12,
-                          br(),
-                          uiOutput("bioScoreBox"),
-                          uiOutput("closestGreenspaceUI")
-                   )
-                 ),
-                 
-                 br(),
-                 DTOutput("dataTable"),
-                 
-                 br(),
-                 fluidRow(
-                   column(12,
-                          plotOutput("bioSocPlot", height = "400px")
-                   )
-                 ),
-                 
-                 br(),
-                 fluidRow(
-                   column(12,
-                          plotOutput("collectionPlot", height = "300px")
-                   )
-                 )
-               )
-             )
-    ),
-    
-    #br.?
-    tabPanel(
-      "GBIF Summaries",
-      sidebarLayout(
-        sidebarPanel(
-          selectInput(
-            "class_filter",
-            "Select a GBIF Class to Summarize:",
-            choices = c("All", sort(unique(sf_gbif$class))), 
-            selected = "All"
-          ),
-          selectInput(
-            "family_filter",
-            "Filter by Family (optional):",
-            choices = c("All", sort(unique(sf_gbif$family))),
-            selected = "All"
-          )
-        ),
-        mainPanel(
-          DTOutput("classTable"),
-          br(),
-          h3("Observations vs. Species Richness"),
-          plotOutput("obsVsSpeciesPlot", height = "400px"),
-          p("This plot displays the relationship between the number of observations and the species richness. Use this visualization to understand data coverage and biodiversity trends.")
-        )
-      )
-    ),
-    fluidRow(
-      column(
-        width = 12,
-        tags$b("Reimagining San Francisco (Fill out with CAS):"),
-        p("Reimagining San Francisco is an initiative aimed at integrating ecological, social, 
-       and technological dimensions to shape a sustainable future for the Bay Area. 
-       This collaboration unites diverse stakeholders to explore innovations in urban planning, 
-       conservation, and community engagement. The Reimagining San Francisco Data Working Group has been tasked with identifying and integrating multiple sources of socio-ecological biodiversity information in a co-development framework."),
-        
-        tags$b("Why Biodiversity Access Matters (Polish this):"),
-        p("Ensuring equitable access to biodiversity is essential for human well-being, 
-       ecological resilience, and global policy decisions related to conservation. 
-       Areas with higher biodiversity can support ecosystem services including pollinators, moderate climate extremes, 
-       and provide cultural, recreational, and health benefits to local communities. 
-       Recognizing that cities are particularly complex socio-ecological systems facing both legacies of sociocultural practices as well as current ongoing dynamic human activities and pressures.
-       Incorporating multiple facets of biodiversity metrics alongside variables employed by city planners, human geographers, and decision-makers into urban planning will allow a more integrative lens in creating a sustainable future for cities and their residents."),
-        
-        tags$b("How We Calculate Biodiversity Access Percentile:"),
-        p("Total unique species found within the user-generated isochrone. 
-       We then compare that value to the distribution of unique species counts across all census block groups, 
-       converting that comparison into a percentile ranking (Polish this, look at the 15 Minute city). 
-       A higher percentile indicates greater biodiversity within the chosen area, 
-       relative to other parts of the city or region.")
+    # Tab Items
+    tabItems(
+      # Isochrone Explorer Tab
+      tabItem(tabName = "isochrone",
+              fluidRow(
+                box(
+                  title = "Controls", status = "success", solidHeader = TRUE, width = 4,
+                  radioButtons(
+                    "location_choice", 
+                    "Select Location Method:",
+                    choices = c("Address (Geocode)" = "address", 
+                                "Click on Map"      = "map_click"),
+                    selected = "map_click"  
+                  ),
+                  
+                  conditionalPanel(
+                    condition = "input.location_choice == 'address'",
+                    mapboxGeocoderInput(
+                      inputId = "geocoder",
+                      placeholder = "Search for an address",
+                      access_token = mapbox_token
+                    )
+                  ),
+                  
+                  checkboxGroupInput(
+                    "transport_modes", 
+                    "Select Transportation Modes:",
+                    choices = list("Driving"             = "driving",
+                                   "Walking"             = "walking",
+                                   "Cycling"             = "cycling",
+                                   "Driving with Traffic"= "driving-traffic"),
+                    selected = c("driving", "walking")
+                  ),
+                  
+                  checkboxGroupInput(
+                    "iso_times", 
+                    "Select Isochrone Times (minutes):",
+                    choices = list("5" = 5, "10" = 10, "15" = 15),
+                    selected = c(5, 10)
+                  ),
+                  
+                  actionButton("generate_iso", "Generate Isochrones", icon = icon("play")),
+                  actionButton("clear_map", "Clear", icon = icon("times"))
+                ),
+                box(
+                  title = "Map", status = "success", solidHeader = TRUE, width = 8,
+                  leafletOutput("isoMap", height = 600)
+                )
+              ),
+              fluidRow(
+                box(
+                  title = "Biodiversity Access Score", status = "success", solidHeader = TRUE, width = 6,
+                  uiOutput("bioScoreBox")
+                ),
+                box(
+                  title = "Closest Greenspace", status = "success", solidHeader = TRUE, width = 6,
+                  uiOutput("closestGreenspaceUI")
+                )
+              ),
+              fluidRow(
+                box(
+                  title = "Summary Data", status = "success", solidHeader = TRUE, width = 12,
+                  DTOutput("dataTable") %>% withSpinner(type = 8, color = "#28a745")
+                )
+              ),
+              fluidRow(
+                box(
+                  title = "Biodiversity & Socioeconomic Summary", status = "success", solidHeader = TRUE, width = 12,
+                  plotOutput("bioSocPlot", height = "400px") %>% withSpinner(type = 8, color = "#28a745")
+                )
+              ),
+              fluidRow(
+                box(
+                  title = "GBIF Records by Institution", status = "success", solidHeader = TRUE, width = 12,
+                  plotOutput("collectionPlot", height = "400px") %>% withSpinner(type = 8, color = "#28a745")
+                )
+              )
       ),
       
-      tags$b("Next Steps:"),
-      tags$ul(
-        tags$li("Add impervious surface"),
-        tags$li("National walkability score"),
-        tags$li("Social vulnerability score"),
-        tags$li("NatureServe biodiversity maps"),
-        tags$li("Calculate cold-hotspots within ggregation of H6 bins instead of by census block group: Ask Carl"),
-        tags$li("Species range maps"),
-        tags$li("Add common name GBIF"),
-        tags$li("Partner orgs"),
-        tags$li("Optimize speed -> store variables -> H-ify the world?"),
-        tags$li("Brainstorm and co-develop the biodiversity access score"),
-        tags$li("For the GBIF summaries, add an annotated GBIF_sf with environmental variables so we can see landcover type association across the biodiversity within the isochrone.")
+      # GBIF Summaries Tab
+      tabItem(tabName = "gbif",
+              fluidRow(
+                box(
+                  title = "Filters", status = "success", solidHeader = TRUE, width = 4,
+                  selectInput(
+                    "class_filter",
+                    "Select a GBIF Class to Summarize:",
+                    choices = c("All", sort(unique(sf_gbif$class))), 
+                    selected = "All"
+                  ),
+                  selectInput(
+                    "family_filter",
+                    "Filter by Family (optional):",
+                    choices = c("All", sort(unique(sf_gbif$family))),
+                    selected = "All"
+                  )
+                ),
+                box(
+                  title = "Data Summary", status = "success", solidHeader = TRUE, width = 8,
+                  DTOutput("classTable")
+                )
+              ),
+              fluidRow(
+                box(
+                  title = "Observations vs. Species Richness", status = "success", solidHeader = TRUE, width = 12,
+                  plotOutput("obsVsSpeciesPlot", height = "300px") %>% withSpinner(type = 8, color = "#28a745"),
+                  p("This plot displays the relationship between the number of observations and the species richness. Use this visualization to understand data coverage and biodiversity trends.")
+                )
+              )
+      ),
+      # Community Science Tab
+      tabItem(tabName = "community_science",
+              fluidRow(
+                box(
+                  title = "Partner Community Organizations", status = "success", solidHeader = TRUE, width = 12,
+                  leafletOutput("communityMap", height = 600)
+                )
+              ),
+              fluidRow(
+                box(
+                  title = "Community Organizations Data", status = "success", solidHeader = TRUE, width = 12,
+                  DTOutput("communityTable") %>% withSpinner(type = 8, color = "#28a745")
+                )
+              )
+      ),
+      
+      # About Tab
+      tabItem(tabName = "about",
+              fluidRow(
+                box(
+                  title = "App Summary", status = "success", solidHeader = TRUE, width = 12,
+                  tags$b("App Summary (Fill out with RSF data working group):"),
+                  p("
+                    This application allows users to either click on a map or geocode an address 
+                    to generate travel-time isochrones across multiple transportation modes 
+                    (e.g., pedestrian, cycling, driving, driving during traffic).
+                    It retrieves socio-economic data from precomputed Census variables, calculates NDVI, 
+                    and summarizes biodiversity records from GBIF. Users can explore information 
+                    related to biodiversity in urban environments, including greenspace coverage, 
+                    population estimates, and species diversity within each isochrone.
+                  "),
+                  
+                  tags$b("Created by:"),
+                  p(strong("Diego Ellis Soto", "Carl Boettiger, Rebecca Johnson, Christopher J. Schell")),
+                  
+                  p("Contact Information: ", strong("diego.ellissoto@berkeley.edu"))
+                )
+              ),
+              fluidRow(
+                box(
+                  title = "Reimagining San Francisco", status = "success", solidHeader = TRUE, width = 12,
+                  tags$b("Reimagining San Francisco (Fill out with CAS):"),
+                  p("Reimagining San Francisco is an initiative aimed at integrating ecological, social, 
+                     and technological dimensions to shape a sustainable future for the Bay Area. 
+                     This collaboration unites diverse stakeholders to explore innovations in urban planning, 
+                     conservation, and community engagement. The Reimagining San Francisco Data Working Group has been tasked with identifying and integrating multiple sources of socio-ecological biodiversity information in a co-development framework.")
+                )
+              ),
+              fluidRow(
+                box(
+                  title = "Why Biodiversity Access Matters", status = "success", solidHeader = TRUE, width = 12,
+                  p("Ensuring equitable access to biodiversity is essential for human well-being, 
+                     ecological resilience, and global policy decisions related to conservation. 
+                     Areas with higher biodiversity can support ecosystem services including pollinators, moderate climate extremes, 
+                     and provide cultural, recreational, and health benefits to local communities. 
+                     Recognizing that cities are particularly complex socio-ecological systems facing both legacies of sociocultural practices as well as current ongoing dynamic human activities and pressures.
+                     Incorporating multiple facets of biodiversity metrics alongside variables employed by city planners, human geographers, and decision-makers into urban planning will allow a more integrative lens in creating a sustainable future for cities and their residents.")
+                )
+              ),
+              fluidRow(
+                box(
+                  title = "How We Calculate Biodiversity Access Percentile", status = "success", solidHeader = TRUE, width = 12,
+                  p("Total unique species found within the user-generated isochrone. 
+                     We then compare that value to the distribution of unique species counts across all census block groups, 
+                     converting that comparison into a percentile ranking (Polish this, look at the 15 Minute city). 
+                     A higher percentile indicates greater biodiversity within the chosen area, 
+                     relative to other parts of the city or region.")
+                )
+              ),
+              fluidRow(
+                box(
+                  title = "Next Steps", status = "success", solidHeader = TRUE, width = 12,
+                  tags$ul(
+                    tags$li("Add impervious surface"),
+                    tags$li("National walkability score"),
+                    tags$li("Social vulnerability score"),
+                    tags$li("NatureServe biodiversity maps"),
+                    tags$li("Calculate cold-hotspots within aggregation of H6 bins instead of by census block group: Ask Carl"),
+                    tags$li("Species range maps"),
+                    tags$li("Add common name GBIF"),
+                    tags$li("Partner orgs"),
+                    tags$li("Optimize speed -> store variables -> H-ify the world?"),
+                    tags$li("Brainstorm and co-develop the biodiversity access score"),
+                    tags$li("For the GBIF summaries, add an annotated GBIF_sf with environmental variables so we can see landcover type association across the biodiversity within the isochrone.")
+                  )
+                )
+              )
       )
     )
-    
-    
-    
-    # )
-    
-    # Separate section for the plot outside of the "GBIF Summaries" tab
-    
-    # tabsetPanel(
-    
-    #   # 1) Isochrone Explorer
-    #   tabPanel(
-    #     mainPanel(
-    #       DTOutput("classTable"),
-    #       br(),
-    #       fluidRow(
-    #         column(
-    #           6,
-    #           # A simple scatter or line plot for n_observations vs n_species
-    #           plotOutput("obsVsSpeciesPlot", height = "300px")
-    #         )
-    #         # ,
-    #         # column(
-    #         #   6,
-    #         #   # A regression model plot using sjPlot
-    #         #   plotOutput("lmCoefficientsPlot", height = "300px")
-    #         # )
-    #       )
-    #     )
-    #   )
-    # ),
-    # 
-    # br()
-    
   )
-  
-  
-  # fluidRow(
-  #   column(
-  #     12,
-  #     tags$h3("Species Richness vs Data Availability"),
-  #     fluidRow(
-  #       column(6, uiOutput("mapNUI")),
-  #       column(6, uiOutput("mapSpeciesUI"))
-  #     )
-  #   )
-  # )
 )
 
 # ------------------------------------------------
-# 4) Server
+# Server
 # ------------------------------------------------
 server <- function(input, output, session) {
   
@@ -333,9 +270,8 @@ server <- function(input, output, session) {
     pal_cbg <- colorNumeric("YlOrRd", cbg_vect_sf$medincE)
     
     pal_rich <- colorNumeric("YlOrRd", domain = cbg_vect_sf$unique_species)
-    # 2) Color palette for data availability
+    # Color palette for data availability
     pal_data <- colorNumeric("Blues", domain = cbg_vect_sf$n_observations)
-    
     
     leaflet() %>%
       addTiles(group = "Street Map (Default)") %>%
@@ -345,12 +281,10 @@ server <- function(input, output, session) {
       addPolygons(
         data = cbg_vect_sf,
         group = "Income",
-        # fillColor = ~pal_cbg(unique_species),
         fillColor = ~pal_cbg(medincE),
         fillOpacity = 0.6,
         color = "white",
         weight = 1,
-        # label = "Income",
         label=~GEOID,
         highlightOptions = highlightOptions(
           weight = 5,
@@ -382,7 +316,8 @@ server <- function(input, output, session) {
         labelOptions = labelOptions(
           style = list("font-weight" = "bold", "color" = "blue"),
           textsize = "12px",
-          direction = "auto"
+          direction = "auto",
+          noHide = FALSE # Labels appear on hover
         )
       ) %>%
       
@@ -428,8 +363,7 @@ server <- function(input, output, session) {
         )
       ) %>%
       
-      # Add richness and nobs
-      # -- Richness layer
+      # Add Species Richness Layer
       addPolygons(
         data = cbg_vect_sf,
         group = "Species Richness",
@@ -437,7 +371,7 @@ server <- function(input, output, session) {
         fillOpacity = 0.6,
         color = "white",
         weight = 1,
-        label =~unique_species,
+        label = ~unique_species,
         popup = ~paste0(
           "<strong>GEOID: </strong>", GEOID,
           "<br><strong>Species Richness: </strong>", unique_species,
@@ -447,7 +381,7 @@ server <- function(input, output, session) {
         )
       ) %>%
       
-      # -- Data Availability layer
+      # Add Data Availability Layer
       addPolygons(
         data = cbg_vect_sf,
         group = "Data Availability",
@@ -455,7 +389,7 @@ server <- function(input, output, session) {
         fillOpacity = 0.6,
         color = "white",
         weight = 1,
-        label =~n_observations,
+        label = ~n_observations,
         popup = ~paste0(
           "<strong>GEOID: </strong>", GEOID,
           "<br><strong>Observations: </strong>", n_observations,
@@ -465,12 +399,13 @@ server <- function(input, output, session) {
         )
       ) %>%
       
-      
       setView(lng = -122.4194, lat = 37.7749, zoom = 12) %>%
       addLayersControl(
         baseGroups    = c("Street Map (Default)", "Satellite (ESRI)", "CartoDB.Positron"),
-        overlayGroups = c("Income", "Greenspace","Species Richness", "Data Availability", 
-                          "Hotspots (KnowBR)", "Coldspots (KnowBR)"),
+        overlayGroups = c("Income", "Greenspace", 
+                          "Hotspots (KnowBR)", "Coldspots (KnowBR)",
+                          "Species Richness", "Data Availability",
+                          "Isochrones", "NDVI Raster"),
         options       = layersControlOptions(collapsed = FALSE)
       ) %>%
       hideGroup("Income") %>%
@@ -490,6 +425,15 @@ server <- function(input, output, session) {
     click <- input$isoMap_click
     if (!is.null(click)) {
       chosen_point(c(lon = click$lng, lat = click$lat))
+      
+      # Provide feedback with coordinates
+      showNotification(
+        paste0("Map clicked at Longitude: ", round(click$lng, 5), 
+               ", Latitude: ", round(click$lat, 5)),
+        type = "message"
+      )
+      
+      # Update the map with a marker
       leafletProxy("isoMap") %>%
         clearMarkers() %>%
         addCircleMarkers(
@@ -501,21 +445,52 @@ server <- function(input, output, session) {
   })
   
   # ------------------------------------------------
-  # Observe clearinf of map
+  # Observe geocoder input
+  # ------------------------------------------------
+  observeEvent(input$geocoder, {
+    req(input$location_choice == "address")
+    geocode_result <- input$geocoder
+    if (!is.null(geocode_result)) {
+      # Extract coordinates
+      xy <- geocoder_as_xy(geocode_result)
+      
+      # Update the chosen_point reactive value
+      chosen_point(c(lon = xy[1], lat = xy[2]))
+      
+      # Provide feedback with the geocoded address and coordinates
+      showNotification(
+        paste0("Address geocoded to Longitude: ", round(xy[1], 5), 
+               ", Latitude: ", round(xy[2], 5)),
+        type = "message"
+      )
+      
+      # Update the map with a marker
+      leafletProxy("isoMap") %>%
+        clearMarkers() %>%
+        addCircleMarkers(
+          lng = xy[1], lat = xy[2],
+          radius = 6, color = "navyblue",
+          label = "Geocoded Address"
+        ) %>%
+        flyTo(lng = xy[1], lat = xy[2], zoom = 13)
+    }
+  })
+  
+  # ------------------------------------------------
+  # Observe clearing of map
   # ------------------------------------------------
   observeEvent(input$clear_map, {
     # Reset the chosen point
     chosen_point(NULL)
     
-    # Clear all markers and isochrones from the map
+    # Clear all markers and isochrones from the map, but keep other layers
     leafletProxy("isoMap") %>%
       clearMarkers() %>%
-      clearShapes() %>%
       clearGroup("Isochrones") %>%
       clearGroup("NDVI Raster")
     
-    # Optional: Reset any other reactive values if needed
-    showNotification("Map cleared. You can select a new location.")
+    # Provide feedback to the user
+    showNotification("Map cleared. You can select a new location.", type = "message")
   })
   
   # ------------------------------------------------
@@ -527,38 +502,7 @@ server <- function(input, output, session) {
       clearGroup("Isochrones") %>%
       clearGroup("NDVI Raster")
     
-    # If user selected address:
-    if (input$location_choice == "address") {
-      if (nchar(input$user_address) < 5) {
-        showNotification("Please enter a more complete address.", type = "error")
-        return(NULL)
-      }
-      
-      loc_df <- tryCatch({
-        mb_geocode(input$user_address, access_token = mapbox_token)
-      }, error = function(e) {
-        showNotification(paste("Geocoding failed:", e$message), type = "error")
-        NULL
-      })
-      
-      # Check for valid lat/lon
-      if (is.null(loc_df) || nrow(loc_df) == 0 || is.na(loc_df$lon[1]) || is.na(loc_df$lat[1])) {
-        showNotification("No valid geocoding results found.", type = "warning")
-        return(NULL)
-      }
-      
-      chosen_point(c(lon = loc_df$lon[1], lat = loc_df$lat[1]))
-      
-      leafletProxy("isoMap") %>%
-        clearMarkers() %>%
-        addCircleMarkers(
-          lng = loc_df$lon[1], lat = loc_df$lat[1],
-          radius = 6, color = "navyblue",
-          label = "Geocoded Address"
-        ) %>%
-        setView(lng = loc_df$lon[1], lat = loc_df$lat[1], zoom = 13)
-    }
-    
+    # Validate inputs
     pt <- chosen_point()
     if (is.null(pt)) {
       showNotification("No location selected! Provide an address or click the map.", type = "error")
@@ -635,7 +579,6 @@ server <- function(input, output, session) {
     ndvi_vals <- values(ndvi_mask)
     ndvi_vals <- ndvi_vals[!is.na(ndvi_vals)]
     
-    # Could be removed ####
     if (length(ndvi_vals) > 0) {
       ndvi_pal <- colorNumeric("YlGn", domain = range(ndvi_vals, na.rm = TRUE), na.color = "transparent")
       
@@ -655,11 +598,13 @@ server <- function(input, output, session) {
         )
     }
     
+    # Ensure other layers remain
     leafletProxy("isoMap") %>%
       addLayersControl(
         baseGroups = c("Street Map (Default)", "Satellite (ESRI)", "CartoDB.Positron"),
         overlayGroups = c("Income", "Greenspace", 
                           "Hotspots (KnowBR)", "Coldspots (KnowBR)",
+                          "Species Richness", "Data Availability",
                           "Isochrones", "NDVI Raster"),
         options = layersControlOptions(collapsed = FALSE)
       )
@@ -695,12 +640,11 @@ server <- function(input, output, session) {
       dist_cold_km <- round(as.numeric(min(dist_cold)) / 1000, 3)
       
       inter_acs <- st_intersection(acs_wide, poly_i)
-      # 
+      
       vect_acs_wide <- vect(acs_wide)
-       vect_poly_i <- vect(poly_i)
-       inter_acs <- intersect(vect_acs_wide, vect_poly_i)
-       inter_acs = st_as_sf(inter_acs)
-      # 
+      vect_poly_i <- vect(poly_i)
+      inter_acs <- intersect(vect_acs_wide, vect_poly_i)
+      inter_acs = st_as_sf(inter_acs)
       
       pop_total <- 0
       inc_str   <- "N/A"
@@ -719,14 +663,10 @@ server <- function(input, output, session) {
         }
       }
       
-      # inter_gs <- st_intersection(osm_greenspace, poly_i)
-      
-      vec_osm_greenspace = vect(osm_greenspace)
-      vect_poly_i <- vect(poly_i)
+      # Intersection with greenspace
+      vec_osm_greenspace <- vect(osm_greenspace)
       inter_gs <- intersect(vec_osm_greenspace, vect_poly_i)
       inter_gs = st_as_sf(inter_gs)
-      
-      
       
       gs_area_m2 <- 0
       if (nrow(inter_gs) > 0) {
@@ -736,6 +676,7 @@ server <- function(input, output, session) {
       gs_area_m2 <- as.numeric(gs_area_m2)
       gs_percent <- ifelse(iso_area_m2 > 0, 100 * gs_area_m2 / iso_area_m2, 0)
       
+      # NDVI Calculation
       poly_vect <- vect(poly_i)
       ndvi_crop <- crop(ndvi, poly_vect)
       ndvi_mask <- mask(ndvi_crop, poly_vect)
@@ -743,35 +684,34 @@ server <- function(input, output, session) {
       ndvi_vals <- ndvi_vals[!is.na(ndvi_vals)]
       mean_ndvi <- ifelse(length(ndvi_vals) > 0, round(mean(ndvi_vals, na.rm=TRUE), 3), NA)
       
-      # inter_gbif <- st_intersection(sf_gbif, poly_i)
+      # Intersection with GBIF data
+      inter_gbif <- intersect(vect_gbif, vect_poly_i)
+      inter_gbif <- st_as_sf(inter_gbif)
       
-      vect_poly_i = vect(poly_i)
+      inter_gbif_acs <- sf_gbif %>% 
+        mutate(
+          income = medincE,
+          ndvi = ndvi_sentinel
+        )
       
-      inter_gbif = intersect(vect_gbif,vect_poly_i)
-      inter_gbif = st_as_sf(inter_gbif)
-      # inter_gbif <- st_intersection(sf_gbif, poly_i)
-      
-      
-      inter_gbif_acs = sf_gbif |> dplyr::mutate(income = medincE,
-                                                ndvi = ndvi_sentinel)
-      
+      if (nrow(inter_gbif) > 0) {
+        inter_gbif_acs <- inter_gbif_acs[inter_gbif_acs$GEOID %in% inter_gbif$GEOID, ]
+      }
       
       n_records   <- nrow(inter_gbif)
       n_species   <- length(unique(inter_gbif$species))
       
-      n_birds   <- length(unique(inter_gbif$species[ inter_gbif$class == "Aves" ]))
-      n_mammals <- length(unique(inter_gbif$species[ inter_gbif$class == "Mammalia" ]))
-      n_plants  <- length(unique(inter_gbif$species[ inter_gbif$class %in% 
-                                                       c("Magnoliopsida","Liliopsida","Pinopsida","Polypodiopsida",
-                                                         "Equisetopsida","Bryopsida","Marchantiopsida") ]))
+      n_birds   <- length(unique(inter_gbif$species[inter_gbif$class == "Aves"]))
+      n_mammals <- length(unique(inter_gbif$species[inter_gbif$class == "Mammalia"]))
+      n_plants  <- length(unique(inter_gbif$species[inter_gbif$class %in% 
+                                                      c("Magnoliopsida","Liliopsida","Pinopsida","Polypodiopsida",
+                                                        "Equisetopsida","Bryopsida","Marchantiopsida") ]))
       
       iso_area_km2 <- round(iso_area_m2 / 1e6, 3)
-      #  iso_area_sqm <- round(iso_area_m2, 2)
       
       row_i <- data.frame(
         Mode                = tools::toTitleCase(poly_i$mode),
         Time                = poly_i$time,
-        #   IsochroneArea_m2    = iso_area_sqm,
         IsochroneArea_km2   = iso_area_km2,
         DistToHotspot_km    = dist_hot_km,
         DistToColdspot_km   = dist_cold_km,
@@ -791,14 +731,9 @@ server <- function(input, output, session) {
     }
     
     iso_union <- st_union(iso_data)
-    
-    # inter_all_gbif <- st_intersection(sf_gbif, iso_union)
-    
-    # vect_gbif <- vect(sf_gbif)
     vect_iso <- vect(iso_union)
     inter_all_gbif <- intersect(vect_gbif, vect_iso)
-    inter_all_gbif = st_as_sf(inter_all_gbif)
-    
+    inter_all_gbif <- st_as_sf(inter_all_gbif)
     
     union_n_species <- length(unique(inter_all_gbif$species))
     rank_percentile <- round(100 * ecdf(cbg_vect_sf$unique_species)(union_n_species), 1)
@@ -831,7 +766,6 @@ server <- function(input, output, session) {
       colnames = c(
         "Mode"                 = "Mode",
         "Time (min)"           = "Time",
-        #   "Area (m²)"            = "IsochroneArea_m2",
         "Area (km²)"           = "IsochroneArea_km2",
         "Dist. Hotspot (km)"   = "DistToHotspot_km",
         "Dist. Coldspot (km)"  = "DistToColdspot_km",
@@ -889,25 +823,15 @@ server <- function(input, output, session) {
     }
     
     iso_union <- st_union(iso_data)
-    # inter_gbif <- st_intersection(sf_gbif, iso_union)
-    
-    
     vect_iso <- vect(iso_union)
     inter_gbif <- intersect(vect_gbif, vect_iso)
     inter_gbif = st_as_sf(inter_gbif)
     
-    
-    
-    # Add a quick ACS intersection for mean income & NDVI if needed
-    acs_wide <- cbg_vect_sf %>% mutate(
-      income = median_inc,
-      ndvi   = ndvi_mean
-    )
-    # this can be skipped ! 
-    # inter_gbif_acs <- st_intersection(inter_gbif, acs_wide)
-    
-    inter_gbif_acs = sf_gbif |> dplyr::mutate(income = medincE,
-                                              ndvi = ndvi_sentinel)#We can do this because we preannotated ndvi and us census information
+    inter_gbif_acs = sf_gbif %>% 
+      mutate(
+        income = medincE,
+        ndvi = ndvi_sentinel
+      )
     
     if (input$class_filter != "All") {
       inter_gbif_acs <- inter_gbif_acs[ inter_gbif_acs$class == input$class_filter, ]
@@ -955,7 +879,7 @@ server <- function(input, output, session) {
       geom_point(aes(y = EstimatedPopulation / 1000), color = "red", size = 3) +
       labs(
         x = "Isochrone (Mode-Time)",
-        y = "Blue bars: Unique Species \n | Red line: Population (thousands)",
+        y = "Unique Species (Blue) | Population (Red) (Thousands)",
         title = "Biodiversity & Socioeconomic Summary"
       ) +
       theme_minimal(base_size = 14) +
@@ -963,7 +887,8 @@ server <- function(input, output, session) {
         axis.text.x  = element_text(angle = 45, hjust = 1, size = 12),
         axis.text.y  = element_text(size = 12),
         axis.title.x = element_text(size = 14),
-        axis.title.y = element_text(size = 14)
+        axis.title.y = element_text(size = 14),
+        plot.title   = element_text(hjust = 0.5, size = 16, face = "bold")
       )
   })
   
@@ -979,13 +904,9 @@ server <- function(input, output, session) {
     }
     
     iso_union <- st_union(iso_data)
-    # inter_gbif <- st_intersection(sf_gbif, iso_union)
-    
     vect_iso <- vect(iso_union)
     inter_gbif <- intersect(vect_gbif, vect_iso)
     inter_gbif = st_as_sf(inter_gbif)
-    
-    
     
     if (nrow(inter_gbif) == 0) {
       plot.new()
@@ -997,12 +918,13 @@ server <- function(input, output, session) {
       st_drop_geometry() %>%
       group_by(institutionCode) %>%
       summarize(count = n(), .groups = "drop") %>%
-      arrange(desc(count))
+      arrange(desc(count)) %>%
+      mutate(truncatedCode = substr(institutionCode, 1, 5)) # Shorter version of the names 
     
-    ggplot(df_code, aes(x = reorder(institutionCode, -count), y = count)) +
+    ggplot(df_code, aes(x = reorder(truncatedCode, -count), y = count)) +
       geom_bar(stat = "identity", fill = "darkorange", alpha = 0.7) +
       labs(
-        x = "Institution Code",
+        x = "Institution Code (Truncated)",
         y = "Number of Records",
         title = "GBIF Records by Institution Code (Isochrone Union)"
       ) +
@@ -1011,44 +933,58 @@ server <- function(input, output, session) {
         axis.text.x  = element_text(angle = 45, hjust = 1, size = 12),
         axis.text.y  = element_text(size = 12),
         axis.title.x = element_text(size = 14),
-        axis.title.y = element_text(size = 14)
+        axis.title.y = element_text(size = 14),
+        plot.title   = element_text(hjust = 0.5, size = 16, face = "bold")
       )
-  })
-  
-  # ------------------------------------------------
-  # Additional Section: mapview for species richness vs. data availability
-  # ------------------------------------------------
-  output$mapNUI <- renderUI({
-    map_n <- mapview(cbg_vect_sf, zcol = "n", layer.name="Data Availability (n)")
-    map_n@map
-  })
-  
-  output$mapSpeciesUI <- renderUI({
-    map_s <- mapview(cbg_vect_sf, zcol = "n_species", layer.name="Species Richness (n_species)")
-    map_s@map
   })
   
   # ------------------------------------------------
   # Additional Plot: n_observations vs n_species
   # ------------------------------------------------
+  
+  # Make it reactive: obsVsSpeciesPlot updates dynamically based on user-selected class_filter or family_filter. 
+  
+  filtered_data <- reactive({
+    data <- cbg_vect_sf
+    if (input$class_filter != "All") {
+      data <- data[data$class == input$class_filter, ]
+    }
+    if (input$family_filter != "All") {
+      data <- data[data$family == input$family_filter, ]
+    }
+    data
+  })
+  
   output$obsVsSpeciesPlot <- renderPlot({
-    # A simple scatter plot of n_observations vs. n_species from cbg_vect_sf
-    ggplot(cbg_vect_sf, aes(x = log(n_observations+1), y = log(unique_species+1)) ) +
+    data <- filtered_data()
+    if (nrow(data) == 0) {
+      plot.new()
+      title("No data available for selected filters.")
+      return(NULL)
+    }
+    
+    ggplot(data, aes(x = log(n_observations + 1), y = log(unique_species + 1))) +
       geom_point(color = "blue", alpha = 0.6) +
       labs(
-        x = "Number of Observations (n_observations)",
-        y = "Number of Species (n_species)",
+        x = "Log(Number of Observations + 1)",
+        y = "Log(Species Richness + 1)",
         title = "Data Availability vs. Species Richness"
       ) +
-      theme_minimal(base_size = 14)
+      theme_minimal(base_size = 14) +
+      theme(
+        axis.text.x  = element_text(size = 12),
+        axis.text.y  = element_text(size = 12),
+        axis.title.x = element_text(size = 14),
+        axis.title.y = element_text(size = 14),
+        plot.title   = element_text(hjust = 0.5, size = 16, face = "bold")
+      )
   })
   
   # ------------------------------------------------
-  # Additional Plot: Linear model of n_species ~ n_observations + median_inc + ndvi_mean
+  # [Optional: Linear Model Plot (Commented Out)]
   # ------------------------------------------------
+  # Uncomment and adjust if needed
   # output$lmCoefficientsPlot <- renderPlot({
-  #   # Build a linear model with cbg_vect_sf
-  #   # Must ensure there are no NAs
   #   df_lm <- cbg_vect_sf %>% 
   #     filter(!is.na(n_observations), 
   #            !is.na(unique_species),
@@ -1056,26 +992,17 @@ server <- function(input, output, session) {
   #            !is.na(ndvi_mean))
   #   
   #   if (nrow(df_lm) < 5) {
-  #     # not enough data
   #     plot.new()
   #     title("Not enough data for linear model.")
   #     return(NULL)
   #   }
   #   
-  #   # Model
   #   fit <- lm(unique_species ~ n_observations + median_inc + ndvi_mean, data = df_lm)
   #   
-  #   # Using sjPlot to visualize coefficients
-  #   # We store in an object and then print it
   #   p <- plot_model(fit, show.values = TRUE, value.offset = .3, title = "LM Coefficients: n_species ~ n_observations + median_inc + ndvi_mean")
   #   print(p)
   # })
 }
 
+# Run the Shiny app
 shinyApp(ui, server)
-
-# library(profvis)
-# 
-# profvis({
-#   shinyApp(ui, server)
-# })
