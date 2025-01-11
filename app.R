@@ -56,20 +56,20 @@ ui <- dashboardPage(
     # Loading message
     div(id = "loading", style = "display:none; font-size: 20px; color: red;", "Calculating..."),
     
-    fluidRow(
-      column(
-        width = 2,
-        imageOutput("uc_berkeley_logo")
-      ),
-      column(
-        width = 4,
-        imageOutput("california_academy_logo")
-      ),
-      column(
-        width = 6,
-        imageOutput("reimagining_sf_logo")
-      )
-    ),
+    # fluidRow(
+    #   column(
+    #     width = 2,
+    #     imageOutput("uc_berkeley_logo")
+    #   ),
+    #   column(
+    #     width = 4,
+    #     imageOutput("california_academy_logo")
+    #   ),
+    #   column(
+    #     width = 6,
+    #     imageOutput("reimagining_sf_logo")
+    #   )
+    # ),
     # fluidPage(
     #   # Application title
     #   # titlePanel("Test app"),
@@ -309,32 +309,32 @@ server <- function(input, output, session) {
   # Render logos 
   # ------------------------------------------------
   
-  output$uc_berkeley_logo <- renderImage({
-    list(
-      src = file.path("www", "UC_Berkeley_logo.png"),
-      width = "80%",
-      height = "55%",
-      alt = "UC Berkeley Logo"
-    )
-  }, deleteFile = FALSE)
-  
-  output$california_academy_logo <- renderImage({
-    list(
-      src = file.path("www", "California_academy_logo.png"),
-      width = "80%",
-      height = "55%",
-      alt = "California Academy Logo"
-    )
-  }, deleteFile = FALSE)
-  
-  output$reimagining_sf_logo <- renderImage({
-    list(
-      src = file.path("www", "Reimagining_San_Francisco.png"),
-      width = "80%",
-      height = "55%",
-      alt = "Reimagining San Francisco Logo"
-    )
-  }, deleteFile = FALSE)
+  # output$uc_berkeley_logo <- renderImage({
+  #   list(
+  #     src = file.path("www", "UC_Berkeley_logo.png"),
+  #     width = "50%",
+  #     height = "45%",
+  #     alt = "UC Berkeley Logo"
+  #   )
+  # }, deleteFile = FALSE)
+  # 
+  # output$california_academy_logo <- renderImage({
+  #   list(
+  #     src = file.path("www", "California_academy_logo.png"),
+  #     width = "50%",
+  #     height = "45%",
+  #     alt = "California Academy Logo"
+  #   )
+  # }, deleteFile = FALSE)
+  # 
+  # output$reimagining_sf_logo <- renderImage({
+  #   list(
+  #     src = file.path("www", "Reimagining_San_Francisco.png"),
+  #     width = "50%",
+  #     height = "45%",
+  #     alt = "Reimagining San Francisco Logo"
+  #   )
+  # }, deleteFile = FALSE)
 
 
   # ------------------------------------------------
