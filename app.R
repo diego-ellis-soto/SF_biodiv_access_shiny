@@ -56,6 +56,12 @@ ui <- dashboardPage(
     # Loading message
     div(id = "loading", style = "display:none; font-size: 20px; color: red;", "Calculating..."),
     
+    fluidRow(
+      column(
+        width = 2,
+        imageOutput("Combined_logos")
+      ),
+    
     # fluidRow(
     #   column(
     #     width = 2,
@@ -309,7 +315,17 @@ server <- function(input, output, session) {
   # Render logos 
   # ------------------------------------------------
   
-  # output$uc_berkeley_logo <- renderImage({
+
+  output$combine_logo <- renderImage({
+    list(
+      src = file.path("www", "Combined_logos.png"),
+      width = "50%",
+      height = "45%",
+      alt = "Combined_logos"
+    )
+  }, deleteFile = FALSE)
+  
+    # output$uc_berkeley_logo <- renderImage({
   #   list(
   #     src = file.path("www", "UC_Berkeley_logo.png"),
   #     width = "50%",

@@ -1,35 +1,67 @@
-# SF_biodiv_access_shiny
+# SF Biodiversity Access Shiny App
 
-App.R runs both the ui and server side of the add and loads necessary objects in R/setup.R. Shiny App working locally, but errors when pushing to ShinyApps.io.
-
-The aim of this Shiny app is to provide decision support for the Reimagining San Francisco Initiative
+This Shiny app provides decision support for the **Reimagining San Francisco Initiative**, aiming to explore the intersection of biodiversity, socio-economic variables, and greenspace accessibility.
 
 ![Screenshot of the App](www/app_screenshot_1.png)
 
+---
 
-This Shiny App takes:
+## Features
 
-Long/Lat on a mac by a users click OR typing of adress using geocoder.
+- Users can either **click on the map** or **type an address** to generate isochrones for travel-time accessibility.
+- Supports multiple transportation modes, including pedestrian, cycling, driving, and traffic-sensitive driving.
+- Retrieves socio-economic data from **precomputed Census variables**.
+- Calculates and overlays **NDVI** for vegetation analysis.
+- Summarizes biodiversity records from **GBIF** and identifies species richness, greenspace, and socio-economic patterns.
 
-Select a travel time and transportation code to calculate isochromes
+![Combined Logos](www/combined_logos.png)
 
-The background then allows to identify biodiversity around a calculted isochrome as well as socio-economic and environmental variables
+---
 
-It further calculates a summary table of the GBIF data located within the isochrome
+## App Summary
+
+This application allows users to:
+
+- Generate travel-time isochrones across multiple transportation modes.
+- Retrieve biodiversity and socio-economic data for a chosen area.
+- Explore greenspace coverage, population estimates, and species diversity.
+
+**Created by:**
+Diego Ellis Soto, Carl Boettiger, Rebecca Johnson, Christopher J. Schell  
+Contact: diego.ellissoto@berkeley.edu  
+
+---
 
 
-# Next steps: Optimize preanno of sf gbif and cbg
+## Why Biodiversity Access Matters
 
-Add Imp Surf, Walking Scores, SVI to cbg_sf
+Ensuring equitable access to biodiversity is essential for:
 
-Add community grass root partner orgs locations
+- **Human well-being**: Promoting physical and mental health through exposure to nature.
+- **Ecological resilience**: Supporting pollinators, moderating climate extremes, and enhancing ecosystem services.
+- **Urban planning**: Incorporating biodiversity metrics into decision-making for sustainable urban futures.
 
-Get images to work 
+---
 
-# Public transport ddata
+## Next Steps
 
-Calculate accessability matrix for SF
+1. Add impervious surface data, national walkability score, and social vulnerability index.
+2. Integrate community organizations and NatureServe biodiversity maps.
+3. Optimize speed by pre-storing variables and aggregating data.
+4. Develop a comprehensive biodiversity access score in collaboration with stakeholders.
+5. Annotate GBIF data with additional environmental variables for enhanced summaries.
 
+## Public Transport Data
 
-# Show difference on the day
+Future plans include integrating public transportation accessibility to further enhance decision-making capabilities.
+
+---
+
+## Repository Structure
+
+- **App.R**: Main application file containing UI and server logic.
+- **R/setup.R**: Script to load necessary datasets (e.g., annotated GBIF, NDVI).
+- **www/**: Contains logos, screenshots, and other resources.
+
+---
 
