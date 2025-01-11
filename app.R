@@ -15,14 +15,14 @@ library(sf)
 library(DT)
 library(RColorBrewer)
 library(terra)       
-library(data.table)  # for fread
-library(mapview)     # for mapview objects
-library(sjPlot)      # for plotting lm model coefficients
-library(sjlabelled)  # optional if needed for sjPlot
+library(data.table)
+library(mapview)   
+library(sjPlot)    
+library(sjlabelled)
 library(bslib)
 library(shinycssloaders)
 
-source('R/setup.R') # Ensure this script loads necessary data objects
+source('R/setup.R') # Load necessary data (annotated gbif, annotated cbg, ndvi)
 
 # Define your Mapbox token securely
 mapbox_token <- "pk.eyJ1Ijoia3dhbGtlcnRjdSIsImEiOiJjbHc3NmI0cDMxYzhyMmt0OXBiYnltMjVtIn0.Thtu6WqIhOfin6AykskM2g" 
@@ -39,7 +39,9 @@ theme <- bs_theme(
 # UI
 ui <- dashboardPage(
   skin = "green", # shinydashboard skin color
-  dashboardHeader(title = "SF Biodiversity Access Tool"),
+  dashboardHeader(title = "SF Biodiversity Access Tool"
+  ),
+
   dashboardSidebar(
     sidebarMenu(
       menuItem("Isochrone Explorer", tabName = "isochrone", icon = icon("map-marker-alt")),
@@ -50,10 +52,21 @@ ui <- dashboardPage(
   ),
   dashboardBody(
     theme = theme, # Apply the custom theme
-    useShinyjs(),  # Initialize shinyjs
+    useShinyjs(),  
     # Loading message
     div(id = "loading", style = "display:none; font-size: 20px; color: red;", "Calculating..."),
-    
+    fluidRow(
+      column(
+        width = 12, align = "center",
+        tags$img(src = "www/UC_Berkeley_logo.png",
+                 height = "200px", style = "margin:10px;", alt = "UC Berkeley Logo"),
+        tags$img(src = "www/California_academy_logo.png",
+                 height = "200px", style = "margin:10px;", alt = "California Academy Logo"),
+        tags$img(src = "www/Reimagining_San_Francisco.png",
+                 height = "200px", style = "margin:10px;", alt = "Reimagining San Francisco Logo")
+      )
+    ),
+
     # Tab Items
     tabItems(
       # Isochrone Explorer Tab
@@ -777,7 +790,7 @@ server <- function(input, output, session) {
         "Bird Species"         = "Bird_Species",
         "Mammal Species"       = "Mammal_Species",
         "Plant Species"        = "Plant_Species",
-        "Greenspace (m²)"      = "Greenspace_m2",
+        # "Greenspace (m²)"      = "Greenspace_m2",
         "Greenspace (%)"       = "Greenspace_percent"
       ),
       options = list(pageLength = 10, autoWidth = TRUE),
