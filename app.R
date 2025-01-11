@@ -56,7 +56,20 @@ ui <- dashboardPage(
     # Loading message
     div(id = "loading", style = "display:none; font-size: 20px; color: red;", "Calculating..."),
     
-    
+    fluidRow(
+      column(
+        width = 2,
+        imageOutput("uc_berkeley_logo")
+      ),
+      column(
+        width = 4,
+        imageOutput("california_academy_logo")
+      ),
+      column(
+        width = 6,
+        imageOutput("reimagining_sf_logo")
+      )
+    ),
     # fluidPage(
     #   # Application title
     #   # titlePanel("Test app"),
@@ -65,17 +78,17 @@ ui <- dashboardPage(
     # ),
     
     # 
-    fluidPage(
-      column(
-        width = 12, align = "center",
-        tags$img(src = "UC_Berkeley_logo.png",
-                 height = "200px", style = "margin:10px;", alt = "UC Berkeley Logo"),
-        tags$img(src = "California_academy_logo.png",
-                 height = "200px", style = "margin:10px;", alt = "California Academy Logo"),
-        tags$img(src = "Reimagining_San_Francisco.png",
-                 height = "200px", style = "margin:10px;", alt = "Reimagining San Francisco Logo")
-      )
-    ),
+    # fluidRow(
+    #   column(
+    #     width = 12, align = "center",
+    #     tags$img(src = "UC_Berkeley_logo.png",
+    #              height = "200px", style = "margin:10px;", alt = "UC Berkeley Logo"),
+    #     tags$img(src = "California_academy_logo.png",
+    #              height = "200px", style = "margin:10px;", alt = "California Academy Logo"),
+    #     tags$img(src = "Reimagining_San_Francisco.png",
+    #              height = "200px", style = "margin:10px;", alt = "Reimagining San Francisco Logo")
+    #   )
+    # ),
     # fluidPage(
     #   box(
     #     tags$img(height = 100, width = 100,src = "Rlogo.png"),
@@ -292,6 +305,38 @@ server <- function(input, output, session) {
   
   chosen_point <- reactiveVal(NULL)
   
+  # ------------------------------------------------
+  # Render logos 
+  # ------------------------------------------------
+  
+  output$uc_berkeley_logo <- renderImage({
+    list(
+      src = file.path("www", "UC_Berkeley_logo.png"),
+      width = "80%",
+      height = "55%",
+      alt = "UC Berkeley Logo"
+    )
+  }, deleteFile = FALSE)
+  
+  output$california_academy_logo <- renderImage({
+    list(
+      src = file.path("www", "California_academy_logo.png"),
+      width = "80%",
+      height = "55%",
+      alt = "California Academy Logo"
+    )
+  }, deleteFile = FALSE)
+  
+  output$reimagining_sf_logo <- renderImage({
+    list(
+      src = file.path("www", "Reimagining_San_Francisco.png"),
+      width = "80%",
+      height = "55%",
+      alt = "Reimagining San Francisco Logo"
+    )
+  }, deleteFile = FALSE)
+
+
   # ------------------------------------------------
   # Leaflet Base + Hide Overlays
   # ------------------------------------------------

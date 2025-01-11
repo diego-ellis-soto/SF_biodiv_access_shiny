@@ -1,10 +1,27 @@
 # setup
+require(shinyjs)
+library(shiny)
+library(shinydashboard)
+library(leaflet)
+library(mapboxapi)
+library(tidyverse)
+library(tidycensus)
+library(sf)
+library(DT)
+library(RColorBrewer)
+library(terra)       
+library(data.table)
+library(mapview)   
+library(sjPlot)    
+library(sjlabelled)
+library(bslib)
+library(shinycssloaders)
 
 # ------------------------------------------------
 # 1) API Keys
 # ------------------------------------------------
 mapbox_token <- "pk.eyJ1Ijoia3dhbGtlcnRjdSIsImEiOiJjbHc3NmI0cDMxYzhyMmt0OXBiYnltMjVtIn0.Thtu6WqIhOfin6AykskM2g" 
-mb_access_token(mapbox_token, install = FALSE)
+# mb_access_token(mapbox_token, install = FALSE)
 
 # ------------------------------------------------
 # 2) Load Data
