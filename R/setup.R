@@ -40,12 +40,12 @@ ndvi <- terra::rast("/vsicurl/https://huggingface.co/datasets/boettiger-lab/sf_b
 # -- GBIF data
 # Load what is basically inter_gbif !!!!! 
 # load("data/sf_gbif.Rdata")  # => sf_gbif
-download.file('https://huggingface.co/datasets/boettiger-lab/sf_biodiv_access/resolve/main/gbif_census_ndvi_anno.Rdata', 'cbg_vect_sf.Rdata')
-load('gbif_census_ndvi_anno.Rdata')
+download.file('https://huggingface.co/datasets/boettiger-lab/sf_biodiv_access/resolve/main/gbif_census_ndvi_anno.Rdata', '/tmp/cbg_vect_sf.Rdata')
+load('/tmp/gbif_census_ndvi_anno.Rdata')
 vect_gbif <- vect(sf_gbif)
 # -- Precomputed CBG data
-download.file('https://huggingface.co/datasets/boettiger-lab/sf_biodiv_access/resolve/main/cbg_vect_sf.Rdata', 'cbg_vect_sf.Rdata')
-load('cbg_vect_sf.Rdata')
+download.file('https://huggingface.co/datasets/boettiger-lab/sf_biodiv_access/resolve/main/cbg_vect_sf.Rdata', 'tmp/cbg_vect_sf.Rdata')
+load('/tmp/cbg_vect_sf.Rdata')
 if (!"unique_species" %in% names(cbg_vect_sf)) {
   cbg_vect_sf$unique_species <- cbg_vect_sf$n_species
 }
