@@ -28,7 +28,7 @@ mapbox_token <- "pk.eyJ1Ijoia3dhbGtlcnRjdSIsImEiOiJjbHc3NmI0cDMxYzhyMmt0OXBiYnlt
 # ------------------------------------------------
 # -- Greenspace
 getwd()
-osm_greenspace <- st_read("data/greenspaces_osm_nad83.shp", quiet = TRUE) %>%
+osm_greenspace <- st_read("/vsicurl/https://huggingface.co/datasets/boettiger-lab/sf_biodiv_access/resolve/main/greenspaces_osm_nad83.shp", quiet = TRUE) %>%
   st_transform(4326)
 if (!"name" %in% names(osm_greenspace)) {
   osm_greenspace$name <- "Unnamed Greenspace"
@@ -40,10 +40,13 @@ ndvi <- terra::rast("data/SF_EastBay_NDVI_Sentinel_10.tif")
 # -- GBIF data
 # Load what is basically inter_gbif !!!!! 
 # load("data/sf_gbif.Rdata")  # => sf_gbif
-load('data/gbif_census_ndvi_anno.Rdata')
+download.file('https://huggingface.co/datasets/boettiger-lab/sf_biodiv_access/resolve/main/gbif_census_ndvi_anno.Rdata', 'cbg_vect_sf.Rdata')
+
+load('gbif_census_ndvi_anno.Rdata')
 vect_gbif <- vect(sf_gbif)
 # -- Precomputed CBG data
-load('data/cbg_vect_sf.Rdata')
+download.file('https://huggingface.co/datasets/boettiger-lab/sf_biodiv_access/resolve/main/cbg_vect_sf.Rdata', 'cbg_vect_sf.Rdata')
+load('cbg_vect_sf.Rdata')
 if (!"unique_species" %in% names(cbg_vect_sf)) {
   cbg_vect_sf$unique_species <- cbg_vect_sf$n_species
 }
@@ -58,8 +61,8 @@ if (!"ndvi_mean" %in% names(cbg_vect_sf)) {
 }
 
 # -- Hotspots/Coldspots
-biodiv_hotspots  <- st_read("data/hotspots.shp",  quiet = TRUE) %>% st_transform(4326)
-biodiv_coldspots <- st_read("data/coldspots.shp", quiet = TRUE) %>% st_transform(4326)
+biodiv_hotspots  <- st_read("/vsicurl/https://huggingface.co/datasets/boettiger-lab/sf_biodiv_access/resolve/main/hotspots.shp",  quiet = TRUE) %>% st_transform(4326)
+biodiv_coldspots <- st_read("/vsicurl/https://huggingface.co/datasets/boettiger-lab/sf_biodiv_access/resolve/main/coldspots.shp", quiet = TRUE) %>% st_transform(4326)
 
 
 # 
