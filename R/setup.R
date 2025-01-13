@@ -41,7 +41,6 @@ ndvi <- terra::rast("/vsicurl/https://huggingface.co/datasets/boettiger-lab/sf_b
 # Load what is basically inter_gbif !!!!! 
 # load("data/sf_gbif.Rdata")  # => sf_gbif
 download.file('https://huggingface.co/datasets/boettiger-lab/sf_biodiv_access/resolve/main/gbif_census_ndvi_anno.Rdata', 'cbg_vect_sf.Rdata')
-
 load('gbif_census_ndvi_anno.Rdata')
 vect_gbif <- vect(sf_gbif)
 # -- Precomputed CBG data
