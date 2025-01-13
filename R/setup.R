@@ -35,7 +35,7 @@ if (!"name" %in% names(osm_greenspace)) {
 }
 
 # -- NDVI Raster
-ndvi <- terra::rast("data/SF_EastBay_NDVI_Sentinel_10.tif")
+ndvi <- terra::rast("/vsicurl/https://huggingface.co/datasets/boettiger-lab/sf_biodiv_access/resolve/main/SF_EastBay_NDVI_Sentinel_10.tif")
 
 # -- GBIF data
 # Load what is basically inter_gbif !!!!! 
