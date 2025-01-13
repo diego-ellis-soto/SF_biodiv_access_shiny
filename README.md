@@ -1,3 +1,12 @@
+---
+title: Sf Biodiv Access Shiny
+emoji: 📚
+colorFrom: blue
+colorTo: yellow
+sdk: docker
+pinned: false
+---
+
 # SF Biodiversity Access Shiny App
 
 This Shiny app provides decision support for the **Reimagining San Francisco Initiative**, aiming to explore the intersection of biodiversity, socio-economic variables, and greenspace accessibility.
