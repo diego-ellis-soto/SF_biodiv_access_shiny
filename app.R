@@ -673,8 +673,8 @@ server <- function(input, output, session) {
     
     iso_union <- st_union(iso_data)
     iso_union_vect <- vect(iso_union)
-    ndvi_crop <- crop(ndvi, iso_union_vect)
-    ndvi_mask <- mask(ndvi_crop, iso_union_vect)
+    ndvi_crop <- terra::crop(ndvi, iso_union_vect)
+    ndvi_mask <- terra::mask(ndvi_crop, iso_union_vect)
     ndvi_vals <- values(ndvi_mask)
     ndvi_vals <- ndvi_vals[!is.na(ndvi_vals)]
     
@@ -777,8 +777,8 @@ server <- function(input, output, session) {
       
       # NDVI Calculation
       poly_vect <- vect(poly_i)
-      ndvi_crop <- crop(ndvi, poly_vect)
-      ndvi_mask <- mask(ndvi_crop, poly_vect)
+      ndvi_crop <- terra::crop(ndvi, poly_vect)
+      ndvi_mask <- terra::mask(ndvi_crop, poly_vect)
       ndvi_vals <- values(ndvi_mask)
       ndvi_vals <- ndvi_vals[!is.na(ndvi_vals)]
       mean_ndvi <- ifelse(length(ndvi_vals) > 0, round(mean(ndvi_vals, na.rm=TRUE), 3), NA)
