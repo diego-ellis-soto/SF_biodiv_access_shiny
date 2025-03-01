@@ -43,7 +43,7 @@ ui <- dashboardPage(
   ),
 
   dashboardSidebar(
-    sidebarMenu(
+    sidebarMenu(id = "tabs",
       menuItem("Isochrone Explorer", tabName = "isochrone", icon = icon("map-marker-alt")),
       menuItem("GBIF Summaries", tabName = "gbif", icon = icon("table")),
       menuItem("Community Science", tabName = "community_science", icon = icon("users")),
@@ -915,45 +915,64 @@ server <- function(input, output, session) {
   # ------------------------------------------------
   # Secondary table: user-selected CLASS & FAMILY
   # ------------------------------------------------
-  output$classTable <- renderDT({
-    iso_data <- isochrones_data()
-    if (is.null(iso_data) || nrow(iso_data) == 0) {
-      return(DT::datatable(data.frame("Message" = "No isochrones generated yet.")))
+
+  #' The spatial join of the GBIF data with isochrones is computationally expensive.
+  #' This approach calculates the spatial join when the 'gbif' tab is selected
+  #' but when manipulating 'family' and 'class' the inter_gbif_acs value remains
+  #' constant.
+
+  inter_gbif_acs <- reactiveVal(NULL) # Must first declare NULL value
+
+  # Observe event when tab changes and evaluate when equals 'gbif'
+  observeEvent(input$tabs, {
+    req(isochrones_data())
+    # print(input$tabs)
+    if (input$tabs == "gbif") {
+      iso_data <- isochrones_data()
+      if (is.null(iso_data) || nrow(iso_data) == 0) {
+        return(DT::datatable(data.frame("Message" = "No isochrones generated yet.")))
+      }
+
+      iso_union <- st_union(iso_data)
+      vect_iso <- vect(iso_union)
+      inter_gbif <- intersect(vect_gbif, vect_iso)
+      inter_gbif <- st_as_sf(inter_gbif)
+
+      inter_gbif_acs_new <- sf_gbif %>%
+        mutate(
+          income = medincE,
+          ndvi = ndvi_sentinel
+        )
+      inter_gbif_acs(inter_gbif_acs_new) # updates inter_gbif_acs from NULL
     }
-    
-    iso_union <- st_union(iso_data)
-    vect_iso <- vect(iso_union)
-    inter_gbif <- intersect(vect_gbif, vect_iso)
-    inter_gbif = st_as_sf(inter_gbif)
-    
-    inter_gbif_acs = sf_gbif %>% 
-      mutate(
-        income = medincE,
-        ndvi = ndvi_sentinel
-      )
-    
+  })
+
+  output$classTable <- renderDT({
+    req(inter_gbif_acs())
+
+    inter_gbif_acs <- inter_gbif_acs()
     if (input$class_filter != "All") {
-      inter_gbif_acs <- inter_gbif_acs[ inter_gbif_acs$class == input$class_filter, ]
+      inter_gbif_acs <- inter_gbif_acs[inter_gbif_acs$class == input$class_filter, ]
     }
     if (input$family_filter != "All") {
-      inter_gbif_acs <- inter_gbif_acs[ inter_gbif_acs$family == input$family_filter, ]
+      inter_gbif_acs <- inter_gbif_acs[inter_gbif_acs$family == input$family_filter, ]
     }
-    
+
     if (nrow(inter_gbif_acs) == 0) {
       return(DT::datatable(data.frame("Message" = "No records for that combination in the isochrone.")))
     }
-    
+
     species_counts <- inter_gbif_acs %>%
       st_drop_geometry() %>%
       group_by(species) %>%
       summarize(
-        n_records   = n(),
-        mean_income = round(mean(income, na.rm=TRUE), 2),
-        mean_ndvi   = round(mean(ndvi, na.rm=TRUE), 3),
+        n_records = n(),
+        mean_income = round(mean(income, na.rm = TRUE), 2),
+        mean_ndvi = round(mean(ndvi, na.rm = TRUE), 3),
         .groups = "drop"
       ) %>%
       arrange(desc(n_records))
-    
+
     DT::datatable(
       species_counts,
       colnames = c("Species", "Number of Records", "Mean Income", "Mean NDVI"),
@@ -1153,5 +1172,4 @@ server <- function(input, output, session) {
 shinyApp(ui, server)
 
 # 
-
 
