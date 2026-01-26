@@ -1,7 +1,7 @@
 # Here we make 2 raster layers related to the nearest greenspaces in San Francisco
 # at 30m resolution
 # - 1) The distance to the nearest greenspace
-# - 2) The GEOID of the nearest greenspace (for looking up the polygon)
+# - 2) The osm_id of the nearest greenspace (for looking up the polygon)
 
 # Load libraries
 library(tidyverse)
@@ -25,9 +25,9 @@ tcon |> dbExecute("
   SET threads TO 8;
 ")
 
-st_crs(st_read("data/source/Greenspaces_osm_nad93/greenspaces_osm_nad83.shp"))$epsg
+st_crs(st_read("data/cached/greenspaces_osm_nad83.shp"))$epsg
 # Read greenspace data
-greenspaces <- st_read("data/source/Greenspaces_osm_nad93/greenspaces_osm_nad83.shp") %>%
+greenspaces <- st_read("data/cached/greenspaces_osm_nad83.shp") %>%
   st_transform(3310)
 
 # San Francisco county minus farallon islands
@@ -73,7 +73,7 @@ SELECT * EXCLUDE geom,
   ST_TRANSFORM(geom, 'EPSG:4269', 'EPSG:3310', always_xy := true) AS geom3310,
   ST_Centroid(geom) AS centroid_geom3310,
   ST_SimplifyPreserveTopology(ST_TRANSFORM(geom, 'EPSG:4269', 'EPSG:3310', always_xy := true), 10) AS simple_geom3310
-FROM ST_READ('data/source/Greenspaces_osm_nad93/greenspaces_osm_nad83.shp');
+FROM ST_READ('data/cached/greenspaces_osm_nad83.shp');
 
 CREATE INDEX idx_grn_simple_geom ON greenspace_geo USING RTREE (simple_geom3310);
 CREATE INDEX idx_grn_centroid_geom ON greenspace_geo USING RTREE (centroid_geom3310);
@@ -102,7 +102,7 @@ WITH distances AS (
     template.cell_id,
     template.geom AS template_geom,
     ST_AsText(template.geom) AS geom_wkt,
-    GEOID,
+    osm_id,
     ST_Distance(template.geom3310, green.simple_geom3310) AS distance_meters
   FROM template_grid_geo AS template, greenspace_geo AS green
 )
@@ -111,7 +111,7 @@ SELECT
   template_geom,
   geom_wkt,
   MIN(distance_meters) AS distance_to_greenspace_meters,
-  arg_min(GEOID, distance_meters) AS nearest_greenspace_geoid
+  arg_min(osm_id, distance_meters) AS nearest_greenspace_osmid
 FROM distances
 GROUP BY cell_id, template_geom, geom_wkt;
 ")
@@ -121,11 +121,12 @@ tic()
 tcon %>% dbExecute(nn_query)
 toc()
 # Takes 138 seconds
+# 287 seconds on mac
 
 # Get results from database
 sf_dist_complete <- tcon %>%
   tbl("grn_distance_complete") %>%
-  select(cell_id, distance_to_greenspace_meters, nearest_greenspace_geoid) %>%
+  select(cell_id, distance_to_greenspace_meters, nearest_greenspace_osmid) %>%
   collect()
 
 # Create empty raster based on template
@@ -146,17 +147,18 @@ cropped_greenspace_nearest_dist <- greenspace_nearest_dist |>
   trim()
 
 # Create nearest greenspace ID raster
-greenspace_nearest_geoid <- empty_raster
-values(greenspace_nearest_geoid) <- as.numeric(aligned_results$nearest_greenspace_geoid)
-names(greenspace_nearest_geoid) <- "greenspace_nearest_geoid"
-cropped_greenspace_nearest_geoid <- greenspace_nearest_geoid |>
+greenspace_nearest_osmid <- empty_raster
+values(greenspace_nearest_osmid) <- as.numeric(aligned_results$nearest_greenspace_osmid)
+names(greenspace_nearest_osmid) <- "greenspace_nearest_osmid"
+cropped_greenspace_nearest_osmid <- greenspace_nearest_osmid |>
   crop(sf |> st_transform(4326), mask = T) |>
   crop(ext(c(-123, -122, 37.65, 37.85))) |>
   trim()
 
 plot(cropped_greenspace_nearest_dist)
-plot(cropped_greenspace_nearest_geoid)
+plot(cropped_greenspace_nearest_osmid)
 
 # Write rasters
 writeRaster(cropped_greenspace_nearest_dist, "data/output/nearest_greenspace_dist.tif", overwrite = TRUE)
-writeRaster(cropped_greenspace_nearest_geoid, "data/output/nearest_greenspace_geoid.tif", overwrite = TRUE)
+# Use INT8S (64-bit signed integer) to store OSM IDs without precision loss
+writeRaster(cropped_greenspace_nearest_osmid, "data/output/nearest_greenspace_osmid.tif", overwrite = TRUE, datatype = "INT8S")

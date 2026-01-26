@@ -21,8 +21,25 @@ library(sjPlot)
 library(sjlabelled)
 library(bslib)
 library(shinycssloaders)
+library(DBI)
+library(duckdb)
+library(dbplyr)
 
 source('R/setup.R') # Load necessary data (annotated gbif, annotated cbg, ndvi)
+
+# ============================================================================
+# Load GBIF dropdown values from parquet (for UI initialization)
+# ============================================================================
+con_temp <- dbConnect(duckdb::duckdb(), dbdir = ":memory:")
+dbExecute(con_temp, "INSTALL spatial; LOAD spatial;")
+dbExecute(con_temp, "INSTALL httpfs; LOAD httpfs;")
+gbif_tab_temp <- tbl(con_temp, paste0("read_parquet('", gbif_parquet, "')"))
+
+gbif_classes <- gbif_tab_temp |> distinct(class) |> collect() |> pull(class) |> sort()
+gbif_families <- gbif_tab_temp |> distinct(family) |> collect() |> pull(family) |> sort()
+
+dbDisconnect(con_temp, shutdown = TRUE)
+rm(con_temp, gbif_tab_temp)
 
 # Define your Mapbox token securely
 mapbox_token <- "pk.eyJ1Ijoia3dhbGtlcnRjdSIsImEiOiJjbHc3NmI0cDMxYzhyMmt0OXBiYnltMjVtIn0.Thtu6WqIhOfin6AykskM2g" 
@@ -198,13 +215,13 @@ ui <- dashboardPage(
                   selectInput(
                     "class_filter",
                     "Select a GBIF Class to Summarize:",
-                    choices = c("All", sort(unique(sf_gbif$class))), 
+                    choices = c("All", gbif_classes), 
                     selected = "All"
                   ),
                   selectInput(
                     "family_filter",
                     "Filter by Family (optional):",
-                    choices = c("All", sort(unique(sf_gbif$family))),
+                    choices = c("All", gbif_families),
                     selected = "All"
                   )
                 ),
@@ -318,6 +335,21 @@ ui <- dashboardPage(
 # ------------------------------------------------
 server <- function(input, output, session) {
   
+  # ============================================================================
+  # Initialize DuckDB connection (one per session)
+  # ============================================================================
+  con <- dbConnect(duckdb::duckdb(), dbdir = ":memory:")
+  dbExecute(con, "INSTALL spatial; LOAD spatial;")
+  dbExecute(con, "INSTALL httpfs; LOAD httpfs;")
+  
+  # Load GBIF parquet as table reference (reuse throughout session)
+  gbif_tab <- tbl(con, paste0("read_parquet('", gbif_parquet, "')"))
+  
+  # Cleanup connection on session end
+  onStop(function() {
+    dbDisconnect(con, shutdown = TRUE)
+  })
+  
   chosen_point <- reactiveVal(NULL)
   
   # ------------------------------------------------
@@ -371,6 +403,24 @@ server <- function(input, output, session) {
     pal_rich <- colorNumeric("YlOrRd", domain = cbg_vect_sf$unique_species)
     # Color palette for data availability
     pal_data <- colorNumeric("Blues", domain = cbg_vect_sf$n_observations)
+    # browser()
+    
+    # Color palette for greenspace distance (reversed so closer = cooler colors)
+
+    greenspace_vals_clean <- values(greenspace_dist_raster) |> 
+      na.omit() |> 
+      as.numeric()
+
+    # Cap at 95th percentile for better color distribution
+    upper_limit <- quantile(greenspace_vals_clean, 0.998, na.rm = TRUE)
+    # upper_limit <- max(greenspace_vals_clean, na.rm = TRUE)
+
+    pal_greenspace_dist <- colorNumeric(
+      "YlOrRd",
+      domain = c(0, upper_limit),
+      na.color = "transparent",
+      reverse = TRUE
+    )
     
     leaflet() %>%
       addTiles(group = "Street Map (Default)") %>%
@@ -406,6 +456,28 @@ server <- function(input, output, session) {
         color = "green",
         weight = 1,
         label = ~name,
+        highlightOptions = highlightOptions(
+          weight = 5,
+          color = "blue",
+          fillOpacity = 0.5,
+          bringToFront = TRUE
+        ),
+        labelOptions = labelOptions(
+          style = list("font-weight" = "bold", "color" = "blue"),
+          textsize = "12px",
+          direction = "auto",
+          noHide = FALSE # Labels appear on hover
+        )
+      ) %>%
+      
+      addPolygons(
+        data = rsf_projects,
+        group = "RSF Program Projects",
+        fillColor = "purple",
+        fillOpacity = 0.3,
+        color = "purple",
+        weight = 1,
+        label = ~prj_name,
         highlightOptions = highlightOptions(
           weight = 5,
           color = "blue",
@@ -498,10 +570,26 @@ server <- function(input, output, session) {
         )
       ) %>%
       
+      # Add Greenspace Distance Raster Layer
+      addRasterImage(
+        x = greenspace_dist_raster,
+        colors = pal_greenspace_dist,
+        opacity = 0.6,
+        project = TRUE,
+        group = "Greenspace Distance"
+      ) %>%
+      addLegend(
+        position = "bottomleft",
+        pal = pal_greenspace_dist,
+        values = 0:upper_limit,
+        title = "Distance to<br>Greenspace (m)",
+        group = "Greenspace Distance"
+      ) %>%
+      
       setView(lng = -122.4194, lat = 37.7749, zoom = 12) %>%
       addLayersControl(
         baseGroups    = c("Street Map (Default)", "Satellite (ESRI)", "CartoDB.Positron"),
-        overlayGroups = c("Income", "Greenspace", 
+        overlayGroups = c("Income", "Greenspace", "Greenspace Distance", "RSF Program Projects",
                           "Hotspots (KnowBR)", "Coldspots (KnowBR)",
                           "Species Richness", "Data Availability",
                           "Isochrones", "NDVI Raster"),
@@ -509,10 +597,12 @@ server <- function(input, output, session) {
       ) %>%
       hideGroup("Income") %>%
       hideGroup("Greenspace") %>%
+      hideGroup("RSF Program Projects") %>%
       hideGroup("Hotspots (KnowBR)") %>%
       hideGroup("Coldspots (KnowBR)") %>%
       hideGroup("Species Richness") %>%
-      hideGroup("Data Availability")
+      hideGroup("Data Availability") %>%
+      hideGroup("Greenspace Distance")
   })
   
   
@@ -673,35 +763,38 @@ server <- function(input, output, session) {
     
     iso_union <- st_union(iso_data)
     iso_union_vect <- vect(iso_union)
-    ndvi_crop <- terra::crop(ndvi, iso_union_vect)
-    ndvi_mask <- terra::mask(ndvi_crop, iso_union_vect)
-    ndvi_vals <- values(ndvi_mask)
-    ndvi_vals <- ndvi_vals[!is.na(ndvi_vals)]
-    
-    if (length(ndvi_vals) > 0) {
-      ndvi_pal <- colorNumeric("YlGn", domain = range(ndvi_vals, na.rm = TRUE), na.color = "transparent")
-      
-      leafletProxy("isoMap") %>%
-        addRasterImage(
-          x = ndvi_mask,
-          colors = ndvi_pal,
-          opacity = 0.7,
-          project = TRUE,
-          group = "NDVI Raster"
-        ) %>%
-        addLegend(
-          position = "bottomright",
-          pal = ndvi_pal,
-          values = ndvi_vals,
-          title = "NDVI"
-        )
-    }
+    # COMMENTED OUT: Something wrong with NDVI file
+    # ndvi_crop <- terra::crop(ndvi, iso_union_vect)
+    # ndvi_mask <- terra::mask(ndvi_crop, iso_union_vect)
+    # ndvi_vals <- values(ndvi_mask)
+    # ndvi_vals <- ndvi_vals[!is.na(ndvi_vals)]
+    # 
+    # if (length(ndvi_vals) > 0) {
+    #   ndvi_pal <- colorNumeric("YlGn", domain = range(ndvi_vals, na.rm = TRUE), na.color = "transparent")
+    #   
+    #   leafletProxy("isoMap") %>%
+    #     addRasterImage(
+    #       x = ndvi_mask,
+    #       colors = ndvi_pal,
+    #       opacity = 0.7,
+    #       project = TRUE,
+    #       group = "NDVI Raster"
+    #     ) %>%
+    #     removeControl(layerId = "ndvi_legend") %>%
+    #     addLegend(
+    #       position = "bottomright",
+    #       pal = ndvi_pal,
+    #       values = ndvi_vals,
+    #       title = "NDVI",
+    #       layerId = "ndvi_legend"
+    #     )
+    # }
     
     # Ensure other layers remain
     leafletProxy("isoMap") %>%
       addLayersControl(
         baseGroups = c("Street Map (Default)", "Satellite (ESRI)", "CartoDB.Positron"),
-        overlayGroups = c("Income", "Greenspace", 
+        overlayGroups = c("Income", "Greenspace", "Greenspace Distance", "RSF Program Projects",
                           "Hotspots (KnowBR)", "Coldspots (KnowBR)",
                           "Species Richness", "Data Availability",
                           "Isochrones", "NDVI Raster"),
@@ -716,6 +809,17 @@ server <- function(input, output, session) {
     iso_data <- isochrones_data()
     if (is.null(iso_data) || nrow(iso_data) == 0) {
       return(data.frame())
+    }
+    
+    # Get the clicked/geocoded point coordinates
+    user_point <- chosen_point()
+    user_point_sf <- NULL
+    if (!is.null(user_point)) {
+      user_point_sf <- st_as_sf(
+        data.frame(lon = user_point["lon"], lat = user_point["lat"]),
+        coords = c("lon", "lat"), 
+        crs = 4326
+      )
     }
     
     acs_wide <- cbg_vect_sf %>%
@@ -763,48 +867,90 @@ server <- function(input, output, session) {
       }
       
       # Intersection with greenspace
-      vec_osm_greenspace <- vect(osm_greenspace)
-      inter_gs <- intersect(vec_osm_greenspace, vect_poly_i)
-      inter_gs = st_as_sf(inter_gs)
+      # Closest Greenspace using pre-computed distance raster (fast)
+      osm_greenspace_name <- NA
+      min_dist_val <- NA
       
-      gs_area_m2 <- 0
-      if (nrow(inter_gs) > 0) {
-        gs_area_m2 <- sum(st_area(inter_gs))
+      if (!is.null(user_point_sf)) {
+        # Extract values from rasters (ensure single value with [1])
+        min_dist_val <- (greenspace_dist_raster |> extract(user_point_sf) |> pull(greenspace_nearest_dist))[1]
+        user_point_osm_id <- (greenspace_osmid_raster |> extract(user_point_sf) |> pull(2))[1]
+
+        osm_greenspace_name <- osm_greenspace |> mutate(osm_id = as.numeric(osm_id)) |>   
+          filter(osm_id == as.numeric(user_point_osm_id)) |> pull(name)
+          # browser()
+        # Ensure single value for conditional check
+        if(length(osm_greenspace_name) == 0 || is.na(osm_greenspace_name[1])) {
+          osm_greenspace_name <- "Unnamed Greenspace"
+        } else {
+          osm_greenspace_name <- osm_greenspace_name[1]
+        }
       }
+    
+      # browser()
+
+      # OLD: Vector intersection approach (slower)
+      # vec_osm_greenspace <- vect(osm_greenspace)
+      # inter_gs_old <- intersect(vec_osm_greenspace, vect_poly_i)
+      # inter_gs_old = st_as_sf(inter_gs_old)
+      
+      # gs_area_m2_old <- 0
+      # if (nrow(inter_gs_old) > 0) {
+      #   gs_area_m2_old <- sum(st_area(inter_gs_old))
+      # }
+      # iso_area_m2_old <- as.numeric(st_area(poly_i))
+      # gs_area_m2_old <- as.numeric(gs_area_m2_old)
+      # gs_percent_old <- ifelse(iso_area_m2_old > 0, 100 * gs_area_m2_old / iso_area_m2_old, 0)
+      
+      # NEW: Raster-based approach (should be faster)
+      # Crop distance raster to isochrone
+      dist_crop <- terra::crop(greenspace_dist_raster, vect_poly_i)
+      dist_mask <- terra::mask(dist_crop, vect_poly_i)
+      
+      # Pixels with distance = 0 are greenspace
+      is_greenspace <- dist_mask == 0
+      
+      # Calculate greenspace area
+      # Use cellSize() to get actual area in m² for each cell (handles degree-to-meter conversion)
+      cell_areas <- terra::cellSize(is_greenspace, unit = "m")
+      # Sum areas where is_greenspace = TRUE
+      gs_area_m2 <- as.numeric(terra::global(cell_areas * is_greenspace, "sum", na.rm = TRUE)[1, 1])
+      
+      # Calculate percentage
       iso_area_m2 <- as.numeric(st_area(poly_i))
-      gs_area_m2 <- as.numeric(gs_area_m2)
       gs_percent <- ifelse(iso_area_m2 > 0, 100 * gs_area_m2 / iso_area_m2, 0)
       
       # NDVI Calculation
-      poly_vect <- vect(poly_i)
-      ndvi_crop <- terra::crop(ndvi, poly_vect)
-      ndvi_mask <- terra::mask(ndvi_crop, poly_vect)
-      ndvi_vals <- values(ndvi_mask)
-      ndvi_vals <- ndvi_vals[!is.na(ndvi_vals)]
-      mean_ndvi <- ifelse(length(ndvi_vals) > 0, round(mean(ndvi_vals, na.rm=TRUE), 3), NA)
+      # COMMENTED OUT: Something wrong with NDVI file
+      # poly_vect <- vect(poly_i)
+      # ndvi_crop <- terra::crop(ndvi, poly_vect)
+      # ndvi_mask <- terra::mask(ndvi_crop, poly_vect)
+      # ndvi_vals <- values(ndvi_mask)
+      # ndvi_vals <- ndvi_vals[!is.na(ndvi_vals)]
+      mean_ndvi <- NA  # Temporarily set to NA while NDVI file is unavailable
+      # mean_ndvi <- ifelse(length(ndvi_vals) > 0, round(mean(ndvi_vals, na.rm=TRUE), 3), NA)
       
-      # Intersection with GBIF data
-      inter_gbif <- intersect(vect_gbif, vect_poly_i)
-      inter_gbif <- st_as_sf(inter_gbif)
+      # Intersection with GBIF data using DuckDB
+      iso_wkt <- st_as_text(st_geometry(poly_i)[[1]])
       
-      inter_gbif_acs <- sf_gbif %>% 
-        mutate(
-          income = medincE,
-          ndvi = ndvi_sentinel
-        )
+      gbif_summary <- gbif_tab |>
+        filter(sql(paste0("ST_Intersects(ST_GeomFromText(geom_wkt), ST_GeomFromText('", iso_wkt, "'))"))) |>
+        summarise(
+          n_records = n(),
+          n_species = n_distinct(species),
+          n_birds = sql("COUNT(DISTINCT CASE WHEN class = 'Aves' THEN species END)"),
+          n_mammals = sql("COUNT(DISTINCT CASE WHEN class = 'Mammalia' THEN species END)"),
+          n_plants = sql("COUNT(DISTINCT CASE WHEN class IN ('Magnoliopsida','Liliopsida','Pinopsida','Polypodiopsida','Equisetopsida','Bryopsida','Marchantiopsida') THEN species END)")
+        ) |>
+        collect()
       
-      if (nrow(inter_gbif) > 0) {
-        inter_gbif_acs <- inter_gbif_acs[inter_gbif_acs$GEOID %in% inter_gbif$GEOID, ]
-      }
-      
-      n_records   <- nrow(inter_gbif)
-      n_species   <- length(unique(inter_gbif$species))
-      
-      n_birds   <- length(unique(inter_gbif$species[inter_gbif$class == "Aves"]))
-      n_mammals <- length(unique(inter_gbif$species[inter_gbif$class == "Mammalia"]))
-      n_plants  <- length(unique(inter_gbif$species[inter_gbif$class %in% 
-                                                      c("Magnoliopsida","Liliopsida","Pinopsida","Polypodiopsida",
-                                                        "Equisetopsida","Bryopsida","Marchantiopsida") ]))
+      # Extract values (summarise always returns 1 row, even if 0 matches)
+      n_records <- ifelse(nrow(gbif_summary) > 0, gbif_summary$n_records, 0)
+      n_species <- ifelse(nrow(gbif_summary) > 0, gbif_summary$n_species, 0)
+      n_birds <- ifelse(nrow(gbif_summary) > 0, gbif_summary$n_birds, 0)
+      n_mammals <- ifelse(nrow(gbif_summary) > 0, gbif_summary$n_mammals, 0)
+      n_plants <- ifelse(nrow(gbif_summary) > 0, gbif_summary$n_plants, 0)
+
       
       iso_area_km2 <- round(iso_area_m2 / 1e6, 3)
       
@@ -824,31 +970,26 @@ server <- function(input, output, session) {
         Plant_Species       = n_plants,
         Greenspace_m2       = round(gs_area_m2, 2),
         Greenspace_percent  = round(gs_percent, 2),
+        closest_greenspace = osm_greenspace_name,
+        closest_greenspace_dist_m = round(min_dist_val, 1),
         stringsAsFactors    = FALSE
       )
       results <- rbind(results, row_i)
     }
     
+    # Calculate biodiversity percentile for all isochrones combined
     iso_union <- st_union(iso_data)
-    vect_iso <- vect(iso_union)
-    inter_all_gbif <- intersect(vect_gbif, vect_iso)
-    inter_all_gbif <- st_as_sf(inter_all_gbif)
+    union_wkt <- st_as_text(st_geometry(iso_union)[[1]])
     
-    union_n_species <- length(unique(inter_all_gbif$species))
+    union_gbif_summary <- gbif_tab |>
+      filter(sql(paste0("ST_Intersects(ST_GeomFromText(geom_wkt), ST_GeomFromText('", union_wkt, "'))"))) |>
+      summarise(n_species = n_distinct(species)) |>
+      collect()
+    
+    union_n_species <- if (nrow(union_gbif_summary) > 0) union_gbif_summary$n_species[1] else 0
     rank_percentile <- round(100 * ecdf(cbg_vect_sf$unique_species)(union_n_species), 1)
     attr(results, "bio_percentile") <- rank_percentile
-    
-    # Closest Greenspace from ANY part of the isochrone
-    dist_mat <- st_distance(iso_union, osm_greenspace)  # 1 x N matrix
-    if (length(dist_mat) > 0) {
-      min_dist <- min(dist_mat)
-      min_idx  <- which.min(dist_mat)
-      gs_name  <- osm_greenspace$name[min_idx]
-      attr(results, "closest_greenspace") <- gs_name
-    } else {
-      attr(results, "closest_greenspace") <- "None"
-    }
-    
+
     results
   })
   
@@ -860,8 +1001,13 @@ server <- function(input, output, session) {
     if (nrow(df) == 0) {
       return(DT::datatable(data.frame("Message" = "No isochrones generated yet.")))
     }
+    
+    # Select only the columns to display (excluding Greenspace_m2)
+    df_display <- df |>
+      select(-Greenspace_m2)
+    
     DT::datatable(
-      df,
+      df_display,
       colnames = c(
         "Mode"                 = "Mode",
         "Time (min)"           = "Time",
@@ -876,10 +1022,9 @@ server <- function(input, output, session) {
         "Bird Species"         = "Bird_Species",
         "Mammal Species"       = "Mammal_Species",
         "Plant Species"        = "Plant_Species",
-        # "Greenspace (m²)"      = "Greenspace_m2",
         "Greenspace (%)"       = "Greenspace_percent"
       ),
-      options = list(pageLength = 10, autoWidth = TRUE),
+      options = list(pageLength = 10, autoWidth = TRUE, scrollX = TRUE),
       rownames = FALSE
     )
   })
@@ -903,12 +1048,19 @@ server <- function(input, output, session) {
   output$closestGreenspaceUI <- renderUI({
     df <- socio_data()
     if (nrow(df) == 0) return(NULL)
-    gs_name <- attr(df, "closest_greenspace")
-    if (is.null(gs_name)) gs_name <- "None"
+    # browser()
+    
+    closest_gs <- df |> 
+    slice_min(closest_greenspace_dist_m) |> 
+    slice_head(n = 1) 
+
+    gs_name <- closest_gs$closest_greenspace
+    gs_dist <- closest_gs$closest_greenspace_dist_m
     
     tagList(
-      strong("Closest Greenspace (from any part of the Isochrone):"),
-      p(gs_name)
+      strong("Closest Greenspace:"),
+      # strong("Closest Greenspace (from any part of the Isochrone):"),
+      p(paste0(gs_name, " (", gs_dist, "m away)"))
     )
   })
   
@@ -916,62 +1068,61 @@ server <- function(input, output, session) {
   # Secondary table: user-selected CLASS & FAMILY
   # ------------------------------------------------
 
-  #' The spatial join of the GBIF data with isochrones is computationally expensive.
-  #' This approach calculates the spatial join when the 'gbif' tab is selected
-  #' but when manipulating 'family' and 'class' the inter_gbif_acs value remains
-  #' constant.
+  #' Store isochrone union WKT for GBIF tab queries
+  #' DuckDB will handle spatial filtering efficiently
 
-  inter_gbif_acs <- reactiveVal(NULL) # Must first declare NULL value
+  iso_union_wkt <- reactiveVal(NULL) # Store WKT for spatial queries
 
   # Observe event when tab changes and evaluate when equals 'gbif'
   observeEvent(input$tabs, {
     req(isochrones_data())
-    # print(input$tabs)
     if (input$tabs == "gbif") {
       iso_data <- isochrones_data()
       if (is.null(iso_data) || nrow(iso_data) == 0) {
-        return(DT::datatable(data.frame("Message" = "No isochrones generated yet.")))
+        iso_union_wkt(NULL)
+        return()
       }
 
       iso_union <- st_union(iso_data)
-      vect_iso <- vect(iso_union)
-      inter_gbif <- intersect(vect_gbif, vect_iso)
-      inter_gbif <- st_as_sf(inter_gbif)
-
-      inter_gbif_acs_new <- sf_gbif %>%
-        mutate(
-          income = medincE,
-          ndvi = ndvi_sentinel
-        )
-      inter_gbif_acs(inter_gbif_acs_new) # updates inter_gbif_acs from NULL
+      union_wkt <- st_as_text(st_geometry(iso_union)[[1]])
+      iso_union_wkt(union_wkt)
     }
   })
 
   output$classTable <- renderDT({
-    req(inter_gbif_acs())
-
-    inter_gbif_acs <- inter_gbif_acs()
+    req(iso_union_wkt())
+    
+    union_wkt <- iso_union_wkt()
+    
+    # Start with spatial filter query
+    query <- gbif_tab |>
+      filter(sql(paste0("ST_Intersects(ST_GeomFromText(geom_wkt), ST_GeomFromText('", union_wkt, "'))")))
+    
+    # Apply class filter if not "All"
     if (input$class_filter != "All") {
-      inter_gbif_acs <- inter_gbif_acs[inter_gbif_acs$class == input$class_filter, ]
+      query <- query |> filter(class == input$class_filter)
     }
+    
+    # Apply family filter if not "All"
     if (input$family_filter != "All") {
-      inter_gbif_acs <- inter_gbif_acs[inter_gbif_acs$family == input$family_filter, ]
+      query <- query |> filter(family == input$family_filter)
     }
-
-    if (nrow(inter_gbif_acs) == 0) {
-      return(DT::datatable(data.frame("Message" = "No records for that combination in the isochrone.")))
-    }
-
-    species_counts <- inter_gbif_acs %>%
-      st_drop_geometry() %>%
-      group_by(species) %>%
+    
+    # Aggregate by species
+    species_counts <- query |>
+      group_by(species) |>
       summarize(
         n_records = n(),
-        mean_income = round(mean(income, na.rm = TRUE), 2),
-        mean_ndvi = round(mean(ndvi, na.rm = TRUE), 3),
+        mean_income = round(mean(medincE, na.rm = TRUE), 2),
+        mean_ndvi = round(mean(ndvi_sentinel, na.rm = TRUE), 3),
         .groups = "drop"
-      ) %>%
-      arrange(desc(n_records))
+      ) |>
+      arrange(desc(n_records)) |>
+      collect()
+
+    if (nrow(species_counts) == 0) {
+      return(DT::datatable(data.frame("Message" = "No records for that combination in the isochrone.")))
+    }
 
     DT::datatable(
       species_counts,
@@ -993,7 +1144,7 @@ server <- function(input, output, session) {
     
     ggplot(df_plot, aes(x = IsoLabel)) +
       geom_col(aes(y = GBIF_Species), fill = "steelblue", alpha = 0.7) +
-      geom_line(aes(y = EstimatedPopulation / 1000, group = 1), color = "red", size = 1) +
+      geom_line(aes(y = EstimatedPopulation / 1000, group = 1), color = "red", linewidth = 1) +
       geom_point(aes(y = EstimatedPopulation / 1000), color = "red", size = 3) +
       labs(
         x = "Isochrone (Mode-Time)",
@@ -1022,22 +1173,22 @@ server <- function(input, output, session) {
     }
     
     iso_union <- st_union(iso_data)
-    vect_iso <- vect(iso_union)
-    inter_gbif <- intersect(vect_gbif, vect_iso)
-    inter_gbif = st_as_sf(inter_gbif)
+    union_wkt <- st_as_text(st_geometry(iso_union)[[1]])
     
-    if (nrow(inter_gbif) == 0) {
+    # Query GBIF data with spatial filter and aggregate by institution
+    df_code <- gbif_tab |>
+      filter(sql(paste0("ST_Intersects(ST_GeomFromText(geom_wkt), ST_GeomFromText('", union_wkt, "'))"))) |>
+      group_by(institutionCode) |>
+      summarize(count = n(), .groups = "drop") |>
+      arrange(desc(count)) |>
+      collect() |>
+      mutate(truncatedCode = substr(institutionCode, 1, 5))
+    
+    if (nrow(df_code) == 0) {
       plot.new()
       title("No GBIF records found in this isochrone.")
       return(NULL)
     }
-    
-    df_code <- inter_gbif %>%
-      st_drop_geometry() %>%
-      group_by(institutionCode) %>%
-      summarize(count = n(), .groups = "drop") %>%
-      arrange(desc(count)) %>%
-      mutate(truncatedCode = substr(institutionCode, 1, 5)) # Shorter version of the names 
     
     ggplot(df_code, aes(x = reorder(truncatedCode, -count), y = count)) +
       geom_bar(stat = "identity", fill = "darkorange", alpha = 0.7) +
@@ -1170,6 +1321,3 @@ server <- function(input, output, session) {
 
 # Run the Shiny app
 shinyApp(ui, server)
-
-# 
-
