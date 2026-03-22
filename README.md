@@ -37,7 +37,7 @@ This application allows users to:
 - Explore greenspace coverage, population estimates, and species diversity.
 
 **Created by:**
-Diego Ellis Soto. In collaboration with Carl Boettiger, Rebecca Johnson, Christopher J. Schell  
+Diego Ellis Soto. In collaboration with Avery Hill, Carl Boettiger, Rebecca Johnson, Christopher J. Schell  
 Contact: diego.ellissoto@berkeley.edu  
 
 ---
