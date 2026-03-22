@@ -30,13 +30,36 @@ st_crs(st_read("data/cached/greenspaces_osm_nad83.shp"))$epsg
 greenspaces <- st_read("data/cached/greenspaces_osm_nad83.shp") %>%
   st_transform(3310)
 
-# San Francisco county minus farallon islands
-sf <- st_read("data/source/CA_Counties/CA_Counties_TIGER2016.shp") %>%
-  filter(NAME == "San Francisco") |>
-  st_transform(3310) |>
+# --- --- --- --- --- ---
+# Commented out # 
+# --- --- --- --- --- ---
+
+# # San Francisco county minus farallon islands
+# sf <- st_read("data/source/CA_Counties/CA_Counties_TIGER2016.shp") %>%
+#   filter(NAME == "San Francisco") |>
+#   st_transform(3310) |>
+#   st_cast("POLYGON") %>%
+#   mutate(area = st_area(.)) |>
+#   slice_max(area)
+# 
+library(tidycensus)
+library(sf)
+library(dplyr)
+
+# requires a Census API key (install once via census_api_key())
+sf <- get_acs(
+  geography = "county",
+  state = "CA",
+  variables = "B01003_001",   # total population (dummy variable just to trigger geometry)
+  year = 2016,
+  geometry = TRUE
+) %>%
+  filter(NAME == "San Francisco County, California") %>%
+  st_transform(3310) %>%
   st_cast("POLYGON") %>%
-  mutate(area = st_area(.)) |>
-  slice_max(area)
+  mutate(area = st_area(geometry)) %>%
+  slice_max(area, n = 1) %>%
+  select(GEOID, NAME, geometry)
 
 
 empty.sr <- rast("data/source/slope.tif")
