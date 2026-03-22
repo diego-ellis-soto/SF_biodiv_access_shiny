@@ -1,8 +1,8 @@
 ---
-title: SF Biodiversity Access Shiny
-emoji: 🌿
-colorFrom: green
-colorTo: blue
+title: Sf Biodiv Access Shiny
+emoji: 📚
+colorFrom: blue
+colorTo: yellow
 sdk: docker
 pinned: false
 ---
