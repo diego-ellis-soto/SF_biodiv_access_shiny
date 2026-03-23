@@ -787,13 +787,30 @@ ui <- dashboardPage(
           )
         ),
         
-        fluidRow(
-          box(
-            title = "Biodiversity & Transit Metrics by Mode",
-            status = "primary", solidHeader = TRUE, width = 12,
-            plotOutput("transitMetricsPlot", height = "450px") %>% withSpinner(type = 8, color = "#005B95")
-          )
+      #   fluidRow(
+      #     box(
+      #       title = "Biodiversity & Transit Metrics by Mode",
+      #       status = "primary", solidHeader = TRUE, width = 12,
+      #       plotOutput("transitMetricsPlot", height = "450px") %>% withSpinner(type = 8, color = "#005B95")
+      #     )
+      #   )
+      # ),
+      fluidRow(
+        box(
+          title = "Biodiversity & Transit Metrics by Mode",
+          status = "primary", solidHeader = TRUE, width = 12,
+          plotOutput("transitMetricsPlot", height = "450px") %>% withSpinner(type = 8, color = "#005B95")
         )
+      ),
+      
+      fluidRow(
+        box(
+          title = "Bivariate Isochrone Plot: Biodiversity vs Environmental Justice",
+          status = "warning", solidHeader = TRUE, width = 12,
+          p("Each point is a generated isochrone. Higher x-values indicate more unique species reachable. Higher y-values indicate lower environmental justice burden. Point size reflects greenspace cover."),
+          plotOutput("bivariateIsoPlot", height = "500px") %>% withSpinner(type = 8, color = "#f0ad4e")
+        )
+      )
       ),
       
       tabItem(
@@ -852,33 +869,530 @@ ui <- dashboardPage(
       
       tabItem(
         tabName = "about",
+
+        # ── Logo banner ──────────────────────────────────────────────────────
         fluidRow(
-          box(
-            title = "App Summary", status = "success", solidHeader = TRUE, width = 12,
-            tags$b("App Summary:"),
-            p("This application allows users to click on a map or geocode an address to generate travel-time isochrones across multiple transportation modes, including walking, cycling, driving, transit, and walk + transit. It retrieves socio-economic data from precomputed Census variables, calculates NDVI, summarizes biodiversity records from GBIF, and integrates environmental justice and transit accessibility information."),
-            tags$b("Created by:"),
-            p(strong("Diego Ellis Soto, Carl Boettiger, Rebecca Johnson, Christopher J. Schell")),
-            p("Contact Information: ", strong("diego.ellissoto@berkeley.edu"))
+          column(
+            width = 12,
+            style = "text-align: center; padding: 20px 0 8px 0;",
+            imageOutput("combine_logo", height = "auto")
           )
         ),
+
+        # ── Hero tagline ─────────────────────────────────────────────────────
         fluidRow(
-          box(
-            title = "Reimagining San Francisco", status = "success", solidHeader = TRUE, width = 12,
-            p("Reimagining San Francisco is an initiative aimed at integrating ecological, social, and technological dimensions to shape a sustainable future for the Bay Area.")
+          column(
+            width = 12,
+            style = "text-align: center; padding: 4px 40px 16px 40px;",
+            tags$h3(
+              style = "color: #2e8b57; font-style: italic; font-weight: 400;",
+              "Exploring equitable access to urban biodiversity across San Francisco"
+            )
           )
         ),
+
+        # ── Row 1: Tool overview + team + GitHub ─────────────────────────────
         fluidRow(
           box(
-            title = "Why Biodiversity Access Matters", status = "success", solidHeader = TRUE, width = 12,
-            p("Ensuring equitable access to biodiversity is essential for human well-being, ecological resilience, and better urban planning. This tool is intended as a decision-support prototype.")
+            title = tagList(icon("leaf"), " About This Tool"),
+            status = "success", solidHeader = TRUE, width = 8,
+            p(
+              "The ", strong("SF Biodiversity Access Decision Support Tool"),
+              " is an interactive web application developed by the ",
+              strong("Reimagining San Francisco (RSF) Data Working Group"),
+              " to investigate how equitably San Francisco residents can reach urban biodiversity ",
+              "depending on their transportation options and socioeconomic context."
+            ),
+            p(
+              "Users select any location in San Francisco — by clicking the map or geocoding an address — ",
+              "choose one or more transport modes and travel-time thresholds, and the app generates ",
+              tags$em("isochrones"),
+              " (reachable-area polygons). Within each isochrone the app computes biodiversity, ",
+              "greenspace, transit, socioeconomic, environmental quality, and equity metrics, and ",
+              "synthesises them into the ", strong("Biodiversity Access Index (BAI)"), "."
+            ),
+            tags$hr(),
+            fluidRow(
+              column(6,
+                tags$b(icon("users"), " Team"),
+                tags$ul(
+                  style = "padding-left: 18px; margin-top: 6px;",
+                  tags$li("Diego Ellis Soto"),
+                  tags$li("Avery Hill"),
+                  tags$li("Christopher J. Schell"),
+                  tags$li("Carl Boettiger"),
+                  tags$li("Rebecca Johnson")
+                )
+              ),
+              column(6,
+                tags$b(icon("university"), " Institutions"),
+                tags$ul(
+                  style = "padding-left: 18px; margin-top: 6px;",
+                  tags$li("UC Berkeley — ESPM"),
+                  tags$li("California Academy of Sciences")
+                ),
+                tags$br(),
+                tags$b(icon("envelope"), " Contact"),
+                tags$p(
+                  style = "margin-top: 4px;",
+                  tags$a(
+                    href = "mailto:diego.ellissoto@berkeley.edu",
+                    "diego.ellissoto@berkeley.edu"
+                  )
+                )
+              )
+            )
+          ),
+          box(
+            title = tagList(icon("seedling"), " Reimagining San Francisco"),
+            status = "success", solidHeader = TRUE, width = 4,
+            p(
+              "Reimagining San Francisco is an initiative integrating ecological, social, and ",
+              "technological dimensions to shape a sustainable future for the Bay Area. The RSF Data ",
+              "Working Group co-develops frameworks that bring together multiple sources of ",
+              "socio-ecological biodiversity information for decision-support."
+            ),
+            tags$a(
+              href = "https://www.calacademy.org", target = "_blank",
+              icon("external-link-alt"), " California Academy of Sciences"
+            ),
+            tags$hr(),
+            tags$b(icon("code-branch"), " Source Code"),
+            tags$p(
+              style = "margin-top: 6px;",
+              tags$a(
+                href   = "https://github.com/diego-ellis-soto/SF_biodiv_access_shiny",
+                target = "_blank",
+                style  = "font-size: 14px;",
+                icon("github"), " diego-ellis-soto/SF_biodiv_access_shiny"
+              )
+            ),
+            tags$div(
+              style = "background-color: #d4edda; border-left: 4px solid #28a745; padding: 8px 10px; margin-top: 8px; font-size: 12px;",
+              icon("info-circle"), " The full source code, setup scripts, and data pipeline are publicly available on GitHub."
+            )
           )
         ),
+
+        # ── Row 2: Why biodiversity access matters ───────────────────────────
         fluidRow(
           box(
-            title = "Biodiversity Access Index (BAI)", status = "warning", solidHeader = TRUE, width = 12,
-            p("The Biodiversity Access Index combines mobility access, biodiversity potential, observation intensity, environmental quality, and equity context into a composite score."),
-            tags$pre("BAI = mean(Mobility_Access, Biodiversity_Potential,\n           Observation_Intensity, Environmental_Quality, Equity_Context)")
+            title = tagList(icon("globe-americas"), " Why Biodiversity Access Matters"),
+            status = "success", solidHeader = TRUE, width = 12,
+            fluidRow(
+              column(6,
+                p(
+                  "Access to urban biodiversity is deeply unequal. Legacies of redlining, disinvestment, ",
+                  "and car-centric planning have concentrated green, biodiverse spaces in wealthier ",
+                  "neighbourhoods, while lower-income and environmental-justice communities often face ",
+                  "longer travel distances and fewer transit options to reach them."
+                ),
+                p(
+                  "Areas with higher biodiversity support essential ecosystem services — pollinators, ",
+                  "carbon sequestration, urban heat mitigation — and provide documented cultural, ",
+                  "recreational, and mental health benefits to local residents."
+                )
+              ),
+              column(6,
+                p(
+                  "Cities are complex socio-ecological systems shaped by ongoing human pressures and ",
+                  "historical decisions. The RSF initiative integrates multiple facets of biodiversity ",
+                  "with variables used by city planners, public health practitioners, and equity advocates ",
+                  "to support a more integrative, justice-oriented lens for urban sustainability."
+                ),
+                p(
+                  "This tool is designed to make those inequities visible, quantifiable, and actionable — ",
+                  "surfacing where the gaps are largest and where investment could make the greatest difference."
+                )
+              )
+            )
+          )
+        ),
+
+        # ── Row 3: How to use ────────────────────────────────────────────────
+        fluidRow(
+          box(
+            title = tagList(icon("map-marked-alt"), " How to Use"),
+            status = "success", solidHeader = TRUE, width = 12,
+            fluidRow(
+              column(6,
+                tags$ol(
+                  style = "font-size: 14px; line-height: 1.85;",
+                  tags$li(
+                    strong("Go to the Isochrone Explorer tab"), " in the left sidebar."
+                  ),
+                  tags$li(
+                    strong("Pick a location."),
+                    tags$ul(
+                      style = "margin-top: 4px;",
+                      tags$li(strong("Click on Map:"), " click anywhere in SF; a red marker confirms selection."),
+                      tags$li(strong("Address (Geocode):"), " type a street address in the search box.")
+                    )
+                  ),
+                  tags$li(
+                    strong("Select transport modes."),
+                    " Driving, Walking, Cycling, and Driving with Traffic use Mapbox. ",
+                    "Transit and Walk + Transit use the SF Muni GTFS timetable. ",
+                    "Extra sliders appear for departure hour and first/last-mile walking budgets."
+                  ),
+                  tags$li(
+                    strong("Choose time budgets"), " — 5, 10, and/or 15 minutes."
+                  ),
+                  tags$li(
+                    strong("Click Generate Isochrones."),
+                    " Shaded polygons appear for each mode × time combination. ",
+                    "Click a polygon for a summary popup."
+                  )
+                )
+              ),
+              column(6,
+                tags$ol(
+                  start = 6,
+                  style = "font-size: 14px; line-height: 1.85;",
+                  tags$li(
+                    strong("Toggle map layers"), " (top-right layer control) to overlay income, ",
+                    "species richness, greenspace, CalEnviroScreen, EJ communities, transit routes, and NDVI."
+                  ),
+                  tags$li(
+                    strong("Explore the panels below the map:"),
+                    tags$ul(
+                      style = "margin-top: 4px;",
+                      tags$li(strong("Score boxes:"), " biodiversity access percentile, transit density, and BAI."),
+                      tags$li(strong("Closest Greenspace:"), " nearest OSM green area, distance, and % greenspace cover."),
+                      tags$li(strong("Spider / Radar Plot:"), " 7-axis BAI profile comparing all isochrones."),
+                      tags$li(strong("Summary Table:"), " full per-isochrone metrics."),
+                      tags$li(strong("Metric Plots:"), " species, population, GBIF institutions, and transit by mode.")
+                    )
+                  ),
+                  tags$li(
+                    strong("GBIF Summaries tab"), " — filter records by class or family; ",
+                    "explore richness vs. sampling effort."
+                  ),
+                  tags$li(
+                    strong("Community Science tab"), " — map and table of RSF partner organisations."
+                  ),
+                  tags$li(
+                    strong("Click Clear"), " to reset the map for a new query."
+                  )
+                )
+              )
+            )
+          )
+        ),
+
+        # ── Row 4: Map layers ────────────────────────────────────────────────
+        fluidRow(
+          box(
+            title = tagList(icon("layer-group"), " Map Layers"),
+            status = "primary", solidHeader = TRUE, width = 12,
+            p(
+              style = "font-size: 13px; color: #555;",
+              "All layers are toggled in the map's layer-control panel (top-right). Base maps can be switched between Street, Satellite, and CartoDB Positron."
+            ),
+            tags$table(
+              class = "table table-hover table-sm",
+              style = "font-size: 13px;",
+              tags$thead(
+                tags$tr(
+                  tags$th("Layer"), tags$th("Description"), tags$th("Source")
+                )
+              ),
+              tags$tbody(
+                tags$tr(tags$td(icon("dollar-sign"), " Income"),
+                  tags$td("Median household income per census block group"),
+                  tags$td("ACS 5-yr")),
+                tags$tr(tags$td(icon("tree"), " Greenspace"),
+                  tags$td("OSM parks, gardens, and public green areas"),
+                  tags$td("OpenStreetMap")),
+                tags$tr(tags$td(icon("ruler"), " Greenspace Distance"),
+                  tags$td("Raster showing distance (m) to the nearest greenspace pixel"),
+                  tags$td("Derived from OSM")),
+                tags$tr(tags$td(icon("map"), " RSF Program Projects"),
+                  tags$td("Partner project polygons from the Reimagining SF Initiative"),
+                  tags$td("RSF Initiative")),
+                tags$tr(tags$td(icon("fire"), " Hotspots (KnowBR)"),
+                  tags$td("Block groups with anomalously high species richness relative to sampling effort"),
+                  tags$td("KnowBR / GBIF")),
+                tags$tr(tags$td(icon("snowflake"), " Coldspots (KnowBR)"),
+                  tags$td("Block groups with anomalously low species richness relative to sampling effort"),
+                  tags$td("KnowBR / GBIF")),
+                tags$tr(tags$td(icon("dove"), " Species Richness"),
+                  tags$td("Unique GBIF species per census block group"),
+                  tags$td("GBIF")),
+                tags$tr(tags$td(icon("database"), " Data Availability"),
+                  tags$td("Total GBIF occurrence records per block group"),
+                  tags$td("GBIF")),
+                tags$tr(tags$td(icon("smog"), " CalEnviroScreen (CI Score)"),
+                  tags$td("Cumulative environmental and health burden by census tract"),
+                  tags$td("OEHHA")),
+                tags$tr(tags$td(icon("balance-scale"), " SF EJ Communities"),
+                  tags$td("SF Environment Dept. environmental justice community burden scores"),
+                  tags$td("SF Environment")),
+                tags$tr(tags$td(icon("route"), " Transit Routes"),
+                  tags$td("All SF Muni routes from GTFS shapes, coloured by official SFMTA route colour"),
+                  tags$td("SFMTA GTFS")),
+                tags$tr(tags$td(icon("bus"), " Transit Stops"),
+                  tags$td("All SF Muni stops with AM peak headway and departure frequency"),
+                  tags$td("SFMTA GTFS")),
+                tags$tr(tags$td(icon("draw-polygon"), " Isochrones"),
+                  tags$td("Generated travel-time polygons (one per mode × time combination)"),
+                  tags$td("Mapbox / gtfsrouter")),
+                tags$tr(tags$td(icon("leaf"), " NDVI Raster"),
+                  tags$td("Sentinel-2 NDVI cropped and masked to the isochrone union"),
+                  tags$td("Sentinel-2"))
+              )
+            )
+          )
+        ),
+
+        # ── Row 5: Transport modes ───────────────────────────────────────────
+        fluidRow(
+          box(
+            title = tagList(icon("car"), " Transportation Modes"),
+            status = "primary", solidHeader = TRUE, width = 12,
+            p(
+              style = "font-size: 13px; color: #555;",
+              "Six modes are supported across two routing engines. Walk + Transit is an approximation ",
+              "combining a Mapbox first-mile walk, GTFS stop-to-stop reachability (SF Muni), and a last-mile ",
+              "walk buffer — not a full door-to-door multimodal isochrone."
+            ),
+            tags$table(
+              class = "table table-hover table-sm",
+              style = "font-size: 13px;",
+              tags$thead(
+                tags$tr(
+                  tags$th("Mode"), tags$th("Engine"), tags$th("Data Source"), tags$th("Notes")
+                )
+              ),
+              tags$tbody(
+                tags$tr(
+                  tags$td(icon("car"), " Driving"), tags$td("Mapbox"),
+                  tags$td("OSM road network"), tags$td("Free-flow speed")
+                ),
+                tags$tr(
+                  tags$td(icon("person-walking"), " Walking"), tags$td("Mapbox"),
+                  tags$td("Pedestrian network"), tags$td("Pedestrian paths and crossings")
+                ),
+                tags$tr(
+                  tags$td(icon("bicycle"), " Cycling"), tags$td("Mapbox"),
+                  tags$td("Bicycle network"), tags$td("Dedicated cycle lanes where available")
+                ),
+                tags$tr(
+                  tags$td(icon("traffic-light"), " Driving with Traffic"), tags$td("Mapbox"),
+                  tags$td("Traffic-aware road network"), tags$td("Real-time + historical congestion")
+                ),
+                tags$tr(
+                  tags$td(icon("bus"), " Transit (GTFS)"), tags$td("gtfsrouter"),
+                  tags$td("SF Muni GTFS"), tags$td("Timetable-based stop-to-stop reachability from nearest stop")
+                ),
+                tags$tr(
+                  tags$td(tagList(icon("person-walking"), "+", icon("bus"), " Walk + Transit")),
+                  tags$td("Mapbox + gtfsrouter"),
+                  tags$td("Pedestrian + SF Muni GTFS"),
+                  tags$td("First-mile walk → Muni ride → last-mile walk within one total time budget")
+                )
+              )
+            )
+          )
+        ),
+
+        # ── Row 6: BAI explanation ───────────────────────────────────────────
+        fluidRow(
+          box(
+            title = tagList(icon("chart-area"), " Biodiversity Access Index (BAI) & Spider Plot"),
+            status = "warning", solidHeader = TRUE, width = 12,
+            p(
+              "The ", strong("Biodiversity Access Index (BAI)"),
+              " is a composite indicator benchmarked against ",
+              strong("citywide empirical distributions"),
+              " (ECDFs across all SF census block groups). Each dimension is scaled 0–1, ",
+              "where 1 means the isochrone ranks at the top of the city-wide distribution for that metric."
+            ),
+            tags$table(
+              class = "table table-bordered table-sm",
+              style = "font-size: 13px; margin-top: 12px;",
+              tags$thead(
+                tags$tr(
+                  tags$th("#"), tags$th("BAI Dimension"), tags$th("Variable"),
+                  tags$th("What it measures"), tags$th("Direction")
+                )
+              ),
+              tags$tbody(
+                tags$tr(
+                  tags$td("1"), tags$td(strong("Mobility Access")),
+                  tags$td(code("Transit_Access_Score")),
+                  tags$td("Muni stops per km² within the isochrone"),
+                  tags$td(icon("arrow-up"), " Higher = better")
+                ),
+                tags$tr(
+                  tags$td("2"), tags$td(strong("Route Access")),
+                  tags$td(code("Unique_Muni_Routes")),
+                  tags$td("Distinct Muni route IDs crossing the isochrone"),
+                  tags$td(icon("arrow-up"), " Higher = better")
+                ),
+                tags$tr(
+                  tags$td("3"), tags$td(strong("Biodiversity Potential")),
+                  tags$td(code("GBIF_Species")),
+                  tags$td("Unique GBIF species recorded within the isochrone"),
+                  tags$td(icon("arrow-up"), " Higher = better")
+                ),
+                tags$tr(
+                  tags$td("4"), tags$td(strong("Sampling Density")),
+                  tags$td(code("SamplingDensity_km2")),
+                  tags$td("GBIF occurrence records per km² — proxy for community science coverage"),
+                  tags$td(icon("arrow-up"), " Higher = better")
+                ),
+                tags$tr(
+                  tags$td("5"), tags$td(strong("Environmental Quality")),
+                  tags$td(code("MeanNDVI")),
+                  tags$td("Mean Sentinel-2 NDVI within the isochrone"),
+                  tags$td(icon("arrow-up"), " Higher = better")
+                ),
+                tags$tr(
+                  tags$td("6"), tags$td(strong("Greenspace Cover")),
+                  tags$td(code("Greenspace_percent")),
+                  tags$td("% of isochrone area covered by OSM greenspace polygons"),
+                  tags$td(icon("arrow-up"), " Higher = better")
+                ),
+                tags$tr(
+                  tags$td("7"), tags$td(strong("Equity Context")),
+                  tags$td(code("SF_EJ_Score (inverted)")),
+                  tags$td("Lower EJ burden → more favourable access context"),
+                  tags$td(icon("arrow-down"), " Lower burden = better")
+                )
+              )
+            ),
+            tags$p(style = "margin-top: 12px;", "The BAI is the unweighted mean of all seven standardised components:"),
+            tags$pre(
+              style = "background: #f8f9fa; border-left: 3px solid #f0ad4e; padding: 10px;",
+              "BAI = mean(\n  Mobility_Access, Route_Access,\n  Biodiversity_Potential, Sampling_Density,\n  Environmental_Quality, Greenspace_Cover,\n  Equity_Context\n)"
+            ),
+            tags$div(
+              style = "background-color: #fff3cd; border-left: 4px solid #f0ad4e; padding: 10px 14px; margin-top: 12px;",
+              icon("exclamation-triangle"), tags$b(" Prototype / Work in Progress: "),
+              " Variable weighting, spatial units, and benchmark distributions should be refined through ",
+              "stakeholder co-development before the BAI is used as a policy-grade score."
+            )
+          )
+        ),
+
+        # ── Row 7: Data sources ──────────────────────────────────────────────
+        fluidRow(
+          box(
+            title = tagList(icon("database"), " Data Sources & Cyberinfrastructure"),
+            status = "success", solidHeader = TRUE, width = 12,
+            fluidRow(
+              column(7,
+                tags$table(
+                  class = "table table-hover table-sm",
+                  style = "font-size: 13px;",
+                  tags$thead(
+                    tags$tr(
+                      tags$th("Dataset"), tags$th("Source"), tags$th("Format"), tags$th("Use in App")
+                    )
+                  ),
+                  tags$tbody(
+                    tags$tr(tags$td(strong("GBIF occurrences")), tags$td("Global Biodiversity Information Facility"),
+                      tags$td("Parquet"), tags$td("Species richness, sampling density, taxonomic breakdowns")),
+                    tags$tr(tags$td(strong("ACS / Census")), tags$td("US Census Bureau (tidycensus)"),
+                      tags$td(".Rdata"), tags$td("Population and median income per census block group")),
+                    tags$tr(tags$td(strong("NDVI raster")), tags$td("Sentinel-2 (pre-processed)"),
+                      tags$td("GeoTIFF"), tags$td("Vegetation quality within isochrones")),
+                    tags$tr(tags$td(strong("OSM Greenspace")), tags$td("OpenStreetMap"),
+                      tags$td("GeoPackage"), tags$td("Greenspace cover %, distance raster, map layer")),
+                    tags$tr(tags$td(strong("SF Muni GTFS")), tags$td("SFMTA"),
+                      tags$td("CSV / ZIP"), tags$td("Transit isochrones, stop density, route access, headways")),
+                    tags$tr(tags$td(strong("CalEnviroScreen 4.0")), tags$td("OEHHA"),
+                      tags$td("File GDB"), tags$td("Cumulative environmental burden scores")),
+                    tags$tr(tags$td(strong("SF EJ Communities")), tags$td("SF Environment Dept."),
+                      tags$td("Shapefile"), tags$td("Environmental justice burden and equity context")),
+                    tags$tr(tags$td(strong("Hotspots / Coldspots")), tags$td("KnowBR analysis on GBIF"),
+                      tags$td("Shapefile"), tags$td("Under- and over-observed biodiversity areas")),
+                    tags$tr(tags$td(strong("RSF Program Projects")), tags$td("RSF Initiative"),
+                      tags$td("GeoPackage"), tags$td("Partner project areas overlay"))
+                  )
+                )
+              ),
+              column(5,
+                tags$div(
+                  style = "background-color: #e8f5e9; border-left: 4px solid #2e8b57; padding: 12px 14px; margin-bottom: 12px;",
+                  tags$b(icon("cloud"), " Remote Data Hosting"),
+                  tags$p(
+                    style = "margin-top: 6px; font-size: 13px;",
+                    "Greenspace, CBG, hotspots, NDVI, and GBIF data are hosted on ",
+                    tags$a(
+                      href = "https://huggingface.co/datasets/boettiger-lab/sf_biodiv_access",
+                      target = "_blank",
+                      "HuggingFace (boettiger-lab/sf_biodiv_access)"
+                    ),
+                    ". The cloud deployment streams these via GDAL's ", code("/vsicurl/"),
+                    " virtual filesystem — no large files need to be bundled in the Docker image."
+                  )
+                ),
+                tags$div(
+                  style = "background-color: #e3f2fd; border-left: 4px solid #1976D2; padding: 12px 14px; margin-bottom: 12px;",
+                  tags$b(icon("bolt"), " GBIF Queries via DuckDB"),
+                  tags$p(
+                    style = "margin-top: 6px; font-size: 13px;",
+                    "GBIF occurrence records (~3M rows for SF) are stored as a local ",
+                    code(".parquet"), " file and queried on-the-fly using ",
+                    tags$a(href = "https://duckdb.org/", target = "_blank", "DuckDB"),
+                    " with the spatial extension. SQL ", code("ST_Intersects"),
+                    " filters records to the isochrone without loading the full dataset into memory."
+                  )
+                ),
+                tags$div(
+                  style = "background-color: #f3e5f5; border-left: 4px solid #7B1FA2; padding: 12px 14px;",
+                  tags$b(icon("github"), " Open Source"),
+                  tags$p(
+                    style = "margin-top: 6px; font-size: 13px;",
+                    "Full source code, data pipeline scripts, and setup instructions are available at:",
+                    tags$br(),
+                    tags$a(
+                      href = "https://github.com/diego-ellis-soto/SF_biodiv_access_shiny",
+                      target = "_blank",
+                      icon("github"), " github.com/diego-ellis-soto/SF_biodiv_access_shiny"
+                    )
+                  )
+                )
+              )
+            )
+          )
+        ),
+
+        # ── Row 8: Roadmap ───────────────────────────────────────────────────
+        fluidRow(
+          box(
+            title = tagList(icon("road"), " Status & Roadmap"),
+            status = "warning", solidHeader = TRUE, width = 12,
+            fluidRow(
+              column(6,
+                tags$div(
+                  style = "background-color: #fff3cd; border-left: 4px solid #f0ad4e; padding: 12px 14px;",
+                  tags$b(icon("flask"), " Current Status"),
+                  tags$p(
+                    style = "margin-top: 6px; font-size: 13px;",
+                    "This tool is a ", strong("decision-support prototype"), " co-developed with the RSF Data Working Group. ",
+                    "The BAI should be treated as an exploratory indicator; variable weights and reference ",
+                    "distributions are subject to revision through ongoing stakeholder engagement."
+                  )
+                )
+              ),
+              column(6,
+                tags$b(icon("tasks"), " Planned Additions"),
+                tags$ul(
+                  style = "font-size: 13px; line-height: 1.85; margin-top: 8px;",
+                  tags$li("Impervious surface coverage layer"),
+                  tags$li("National Walkability Index integration"),
+                  tags$li("CDC Social Vulnerability Index"),
+                  tags$li("NatureServe biodiversity and rarity maps"),
+                  tags$li("Frequency-weighted multimodal transit accessibility score"),
+                  tags$li("Pre-cached transit isochrones for faster querying"),
+                  tags$li("Stakeholder-driven BAI dimension weighting"),
+                  tags$li("Historical and comparative isochrone analysis")
+                )
+              )
+            )
           )
         )
       )
@@ -916,8 +1430,13 @@ server <- function(input, output, session) {
   # Benchmarks for BAI
   # ---------------------------------------------------------------------------
   city_benchmarks <- local({
-    message("Computing citywide benchmark distributions for BAI...")
-    
+    bench_cache <- "data/cache/city_benchmarks.rds"
+    if (file.exists(bench_cache)) {
+      message("Loading city_benchmarks from cache...")
+      return(readRDS(bench_cache))
+    }
+    message("Computing citywide benchmark distributions for BAI (first run only)...")
+
     cbg_bench <- cbg_vect_sf |>
       st_transform(3857) |>
       mutate(area_km2 = as.numeric(st_area(geometry)) / 1e6) |>
@@ -970,13 +1489,73 @@ server <- function(input, output, session) {
       numeric(0)
     }
     
-    list(
-      transit_density = transit_density_bench[is.finite(transit_density_bench)],
-      biodiversity    = biodiversity_bench[is.finite(biodiversity_bench)],
-      sampling        = sampling_density_bench[is.finite(sampling_density_bench)],
-      ndvi            = ndvi_bench[is.finite(ndvi_bench)],
-      ej              = ej_bench[is.finite(ej_bench)]
+    # Greenspace coverage (%) per CBG via OSM greenspace polygon intersection
+    greenspace_cover_bench <- tryCatch({
+      message("Computing per-CBG greenspace coverage for BAI benchmark...")
+      cbg_proj <- st_transform(cbg_bench, 3857)
+      gs_proj  <- st_transform(osm_greenspace, 3857) |> st_make_valid()
+      gs_union <- st_union(gs_proj)
+      cbg_gs_inter <- st_intersection(cbg_proj, gs_union)
+      cbg_gs_area <- cbg_gs_inter |>
+        mutate(gs_area_m2 = as.numeric(st_area(geometry))) |>
+        st_drop_geometry() |>
+        group_by(GEOID) |>
+        summarise(gs_area_m2 = sum(gs_area_m2), .groups = "drop")
+      cbg_bench |>
+        st_drop_geometry() |>
+        select(GEOID, area_km2) |>
+        left_join(cbg_gs_area, by = "GEOID") |>
+        mutate(
+          gs_area_m2 = replace_na(gs_area_m2, 0),
+          gs_pct = 100 * gs_area_m2 / (area_km2 * 1e6)
+        ) |>
+        pull(gs_pct)
+    }, error = function(e) {
+      warning("Greenspace coverage benchmark failed: ", e$message)
+      numeric(0)
+    })
+    
+    # Unique Muni routes accessible per CBG (for route-access axis)
+    route_access_bench <- if (!is.null(gtfs_routes_sf)) {
+      message("Computing per-CBG unique route counts for BAI benchmark...")
+      tryCatch({
+        route_join <- st_join(
+          gtfs_routes_sf[, "route_id"],
+          cbg_bench[, "GEOID"],
+          left = FALSE
+        )
+        route_join |>
+          st_drop_geometry() |>
+          group_by(GEOID) |>
+          summarise(n_routes = n_distinct(route_id), .groups = "drop") |>
+          right_join(
+            cbg_bench |> st_drop_geometry() |> select(GEOID),
+            by = "GEOID"
+          ) |>
+          mutate(n_routes = replace_na(n_routes, 0L)) |>
+          pull(n_routes)
+      }, error = function(e) {
+        warning("Route access benchmark failed: ", e$message)
+        numeric(0)
+      })
+    } else {
+      numeric(0)
+    }
+    
+    bench <- list(
+      transit_density  = transit_density_bench[is.finite(transit_density_bench)],
+      biodiversity     = biodiversity_bench[is.finite(biodiversity_bench)],
+      sampling         = sampling_density_bench[is.finite(sampling_density_bench)],
+      ndvi             = ndvi_bench[is.finite(ndvi_bench)],
+      ej               = ej_bench[is.finite(ej_bench)],
+      route_access     = route_access_bench[is.finite(route_access_bench)],
+      greenspace_cover = greenspace_cover_bench[is.finite(greenspace_cover_bench)]
     )
+
+    if (!dir.exists("data/cache")) dir.create("data/cache", recursive = TRUE)
+    saveRDS(bench, bench_cache)
+    message("City benchmarks saved to cache.")
+    bench
   })
   
   # ---------------------------------------------------------------------------
@@ -984,10 +1563,10 @@ server <- function(input, output, session) {
   # ---------------------------------------------------------------------------
   output$combine_logo <- renderImage({
     list(
-      src = file.path("www", "Combined_logos.png"),
-      width = "50%",
-      height = "45%",
-      alt = "Combined_logos"
+      src    = file.path("www", "Combined_logos.png"),
+      width  = "50%",
+      height = "auto",
+      alt    = "UC Berkeley ESPM · California Academy of Sciences · Reimagining San Francisco"
     )
   }, deleteFile = FALSE)
   
@@ -1117,15 +1696,63 @@ server <- function(input, output, session) {
         )
     }
     
+    # if (!is.null(gtfs_stops_sf)) {
+    #   m <- m |>
+    #     addCircleMarkers(
+    #       data = gtfs_stops_sf,
+    #       group = "Transit Stops",
+    #       radius = 4,
+    #       color = "#005B95", fillColor = "#005B95",
+    #       fillOpacity = 0.7, stroke = FALSE,
+    #       label = ~stop_name
+    #     )
+    # }
+    
+    # Inserted this to make reactive to URL:
     if (!is.null(gtfs_stops_sf)) {
+      stops_for_map <- gtfs_stops_sf
+      
+      if (!"stop_url" %in% names(stops_for_map)) {
+        stops_for_map$stop_url <- NA_character_
+      }
+      if (!"mean_headway_min" %in% names(stops_for_map)) {
+        stops_for_map$mean_headway_min <- NA_real_
+      }
+      if (!"n_departures_peak" %in% names(stops_for_map)) {
+        stops_for_map$n_departures_peak <- NA_real_
+      }
+      
+      stops_for_map$popup_html <- paste0(
+        "<strong>", stops_for_map$stop_name, "</strong>",
+        "<br>Stop ID: ", stops_for_map$stop_id,
+        ifelse(
+          !is.na(stops_for_map$mean_headway_min),
+          paste0("<br>Mean headway (AM): ", round(stops_for_map$mean_headway_min, 1), " min"),
+          ""
+        ),
+        ifelse(
+          !is.na(stops_for_map$n_departures_peak),
+          paste0("<br>Departures (7–9am): ", stops_for_map$n_departures_peak),
+          ""
+        ),
+        ifelse(
+          !is.na(stops_for_map$stop_url) & stops_for_map$stop_url != "",
+          paste0("<br><a href=\"", stops_for_map$stop_url, "\" target=\"_blank\">Open stop page</a>"),
+          ""
+        )
+      )
+      
       m <- m |>
         addCircleMarkers(
-          data = gtfs_stops_sf,
+          data = stops_for_map,
           group = "Transit Stops",
           radius = 4,
-          color = "#005B95", fillColor = "#005B95",
-          fillOpacity = 0.7, stroke = FALSE,
-          label = ~stop_name
+          color = "#005B95",
+          fillColor = "#005B95",
+          fillOpacity = 0.7,
+          stroke = FALSE,
+          label = ~stop_name,
+          popup = ~popup_html
         )
     }
     
@@ -1488,7 +2115,8 @@ server <- function(input, output, session) {
       mutate(population = popE, med_income = medincE)
     
     results <- data.frame()
-    
+    n_isos <- nrow(iso_data)
+
     user_point_sf <- NULL
     pt <- chosen_point()
     if (!is.null(pt)) {
@@ -1517,9 +2145,19 @@ server <- function(input, output, session) {
       }, silent = TRUE)
     }
     
-    for (i in seq_len(nrow(iso_data))) {
+    withProgress(message = "Analyzing isochrones...", value = 0, {
+
+    for (i in seq_len(n_isos)) {
       poly_i <- iso_data[i, ]
       vect_poly_i <- vect(poly_i)
+
+      incProgress(
+        1 / n_isos,
+        detail = paste0(
+          pretty_mode(as.character(poly_i$mode[[1]])),
+          " \u2013 ", poly_i$time[[1]], " min"
+        )
+      )
       
       dist_hot_km <- if (!is.null(hotspot_union)) {
         round(as.numeric(min(st_distance(poly_i, hotspot_union))) / 1000, 3)
@@ -1547,18 +2185,42 @@ server <- function(input, output, session) {
       iso_area_m2 <- as.numeric(st_area(st_transform(poly_i, 3857)))
       iso_area_km2 <- round(iso_area_m2 / 1e6, 3)
       
-      gs_area_m2 <- 0
-      if (exists("greenspace_dist_raster")) {
-        dist_crop <- tryCatch(terra::crop(greenspace_dist_raster, vect_poly_i), error = function(e) NULL)
-        if (!is.null(dist_crop)) {
-          dist_mask <- tryCatch(terra::mask(dist_crop, vect_poly_i), error = function(e) NULL)
-          if (!is.null(dist_mask)) {
-            is_greenspace <- dist_mask == 0
-            cell_areas <- terra::cellSize(is_greenspace, unit = "m")
-            gs_area_m2 <- tryCatch(as.numeric(terra::global(cell_areas * is_greenspace, "sum", na.rm = TRUE)[1, 1]), error = function(e) 0)
-          }
+      # Greenspace area within this isochrone: use pre-cached per-CBG coverage
+      # (replaces slow per-isochrone raster cellSize() which took ~40-55 s each).
+      # Method: intersect isochrone with CBGs, scale each CBG's greenspace_m2 by
+      # the fraction of that CBG falling inside the isochrone, then sum.
+      gs_area_m2 <- tryCatch({
+        if (exists("cbg_greenspace_coverage") && !is.null(cbg_greenspace_coverage)) {
+          poly_proj  <- st_transform(poly_i, 3857)
+          cbg_proj_i <- st_transform(cbg_vect_sf[, "GEOID"], 3857) |>
+            mutate(cbg_area_m2 = as.numeric(st_area(geometry))) |>
+            st_make_valid()
+          inter_df <- st_intersection(cbg_proj_i, poly_proj) |>
+            mutate(inter_area_m2 = as.numeric(st_area(geometry))) |>
+            st_drop_geometry() |>
+            left_join(
+              cbg_greenspace_coverage[, c("GEOID", "greenspace_m2", "cbg_area_m2")],
+              by = "GEOID", suffix = c("_iso", "_cbg")
+            ) |>
+            mutate(
+              greenspace_m2  = tidyr::replace_na(greenspace_m2, 0),
+              cbg_area_m2    = dplyr::coalesce(cbg_area_m2_cbg, cbg_area_m2_iso),
+              contrib        = ifelse(cbg_area_m2 > 0,
+                                      inter_area_m2 / cbg_area_m2 * greenspace_m2,
+                                      0)
+            )
+          sum(inter_df$contrib, na.rm = TRUE)
+        } else if (exists("greenspace_dist_raster")) {
+          # Fallback to raster method if cache is unavailable
+          dist_crop <- terra::crop(greenspace_dist_raster, vect_poly_i)
+          dist_mask <- terra::mask(dist_crop, vect_poly_i)
+          is_greenspace <- dist_mask == 0
+          cell_areas <- terra::cellSize(is_greenspace, unit = "m")
+          as.numeric(terra::global(cell_areas * is_greenspace, "sum", na.rm = TRUE)[1, 1])
+        } else {
+          0
         }
-      }
+      }, error = function(e) 0)
       gs_percent <- ifelse(iso_area_m2 > 0, 100 * gs_area_m2 / iso_area_m2, 0)
       
       mean_ndvi <- NA_real_
@@ -1610,6 +2272,18 @@ server <- function(input, output, session) {
                                 nrow(inter_transit) > 0) {
           round(mean(inter_transit$mean_headway_min, na.rm = TRUE), 1)
         } else NA_real_
+      }
+      
+      # Unique Muni route IDs whose shapes intersect this isochrone
+      n_unique_routes <- 0L
+      if (!is.null(gtfs_routes_sf)) {
+        routes_inter <- tryCatch(
+          st_intersection(gtfs_routes_sf[, "route_id"], poly_i),
+          error = function(e) NULL
+        )
+        n_unique_routes <- if (!is.null(routes_inter) && "route_id" %in% names(routes_inter)) {
+          length(unique(routes_inter$route_id))
+        } else 0L
       }
       
       sampling_density_km2 <- ifelse(iso_area_km2 > 0, round(n_records / iso_area_km2, 2), NA_real_)
@@ -1664,6 +2338,7 @@ server <- function(input, output, session) {
         SamplingDensity_km2    = sampling_density_km2,
         Greenspace_percent     = round(gs_percent, 2),
         Transit_Stops          = n_transit_stops,
+        Unique_Muni_Routes     = n_unique_routes,
         Transit_Access_Score   = transit_access_score,
         Freq_Weighted_Score    = freq_weighted_score,
         Mean_Headway_min       = mean_headway_iso,
@@ -1679,7 +2354,9 @@ server <- function(input, output, session) {
       
       results <- rbind(results, row_i)
     }
-    
+
+    }) # end withProgress
+
     iso_union <- st_union(iso_data)
     inter_all_gbif <- safe_vect_gbif_intersection(st_as_sf(iso_union))
     union_n_species <- if (!is.null(inter_all_gbif) && "species" %in% names(inter_all_gbif) && nrow(inter_all_gbif) > 0) {
@@ -1692,9 +2369,13 @@ server <- function(input, output, session) {
       sf_city_area_km2 <- 121.4
       attr(results, "city_transit_score") <- round(nrow(gtfs_stops_sf) / sf_city_area_km2, 2)
       attr(results, "mean_transit_score") <- round(mean(results$Transit_Access_Score, na.rm = TRUE), 2)
+      attr(results, "mean_transit_stops") <- round(mean(results$Transit_Stops, na.rm = TRUE), 1)
+      attr(results, "mean_muni_routes")   <- round(mean(results$Unique_Muni_Routes, na.rm = TRUE), 1)
     } else {
       attr(results, "city_transit_score") <- NA_real_
       attr(results, "mean_transit_score") <- NA_real_
+      attr(results, "mean_transit_stops") <- NA_real_
+      attr(results, "mean_muni_routes")   <- NA_real_
     }
     
     if (nrow(results) > 0) {
@@ -1731,7 +2412,9 @@ server <- function(input, output, session) {
         Biodiversity_Potential_std = ecdf01(GBIF_Species, ref$biodiversity),
         Observation_Intensity_std  = ecdf01(SamplingDensity_km2, ref$sampling),
         Environmental_Quality_std  = ecdf01(MeanNDVI, ref$ndvi),
-        Equity_Context_std         = ecdf01(eq_obs_inverted, eq_ref_inverted)
+        Greenspace_Cover_std       = ecdf01(Greenspace_percent, ref$greenspace_cover),
+        Equity_Context_std         = ecdf01(eq_obs_inverted, eq_ref_inverted),
+        Route_Access_std           = ecdf01(Unique_Muni_Routes, ref$route_access)
       )
     
     tmp$BAI <- rowMeans(
@@ -1740,7 +2423,9 @@ server <- function(input, output, session) {
         "Biodiversity_Potential_std",
         "Observation_Intensity_std",
         "Environmental_Quality_std",
-        "Equity_Context_std"
+        "Greenspace_Cover_std",
+        "Equity_Context_std",
+        "Route_Access_std"
       )],
       na.rm = TRUE
     )
@@ -1780,8 +2465,10 @@ server <- function(input, output, session) {
     df <- socio_data()
     if (nrow(df) == 0) return(NULL)
     
-    mean_score <- attr(df, "mean_transit_score")
-    city_score <- attr(df, "city_transit_score")
+    mean_score   <- attr(df, "mean_transit_score")
+    city_score   <- attr(df, "city_transit_score")
+    mean_stops   <- attr(df, "mean_transit_stops")
+    mean_routes  <- attr(df, "mean_muni_routes")
     
     if (is.null(mean_score) || is.na(mean_score)) {
       return(wellPanel(HTML("<h3>Transit Access Score: N/A</h3>")))
@@ -1790,11 +2477,30 @@ server <- function(input, output, session) {
     comparison <- if (!is.null(city_score) && !is.na(city_score) && city_score > 0) {
       pct_vs_city <- round(100 * (mean_score - city_score) / city_score, 1)
       sign_label  <- if (pct_vs_city >= 0) "above" else "below"
-      paste0("<br><small>", abs(pct_vs_city), "% ", sign_label,
-             " SF city average (", city_score, " stops/km²)</small>")
+      paste0(
+        "<br><small>", abs(pct_vs_city), "% ", sign_label,
+        " SF city average (", city_score, " stops/km²)",
+        " <span title='City average = total Muni stops \u00f7 SF area (121.4 km\u00b2). ",
+        "Isochrone score = stops within your reachable area \u00f7 that area\u2019s size.",
+        " Higher = denser transit coverage.' ",
+        "style='cursor:help; color:#888;'>&#9432;</span></small>"
+      )
     } else ""
     
-    wellPanel(HTML(paste0("<h2>", mean_score, " stops/km²</h2>", comparison)))
+    stops_line <- if (!is.null(mean_stops) && !is.na(mean_stops)) {
+      paste0("<br><small><b>Muni stops:</b> ", mean_stops, "</small>")
+    } else ""
+    
+    routes_line <- if (!is.null(mean_routes) && !is.na(mean_routes)) {
+      paste0("<br><small><b>Muni routes:</b> ", mean_routes, "</small>")
+    } else ""
+    
+    wellPanel(HTML(paste0(
+      "<h2>", mean_score, " stops/km²</h2>",
+      stops_line,
+      routes_line,
+      comparison
+    )))
   })
   
   output$biodiversityAccessIndexBox <- renderUI({
@@ -1820,10 +2526,21 @@ server <- function(input, output, session) {
     
     if (is.null(gs_name) || is.na(gs_name)) gs_name <- "None"
     
+    gs_pct_vals <- df$Greenspace_percent
+    gs_pct_vals <- gs_pct_vals[!is.na(gs_pct_vals)]
+    gs_pct_label <- if (length(gs_pct_vals) > 0) {
+      paste0(round(mean(gs_pct_vals), 1), "% (mean across isochrones)")
+    } else {
+      "N/A"
+    }
+    
     tagList(
       strong("Closest Greenspace:"),
       p(gs_name),
-      if (!is.null(gs_dist) && !is.na(gs_dist)) p(paste0("Distance: ", round(gs_dist, 1), " m"))
+      if (!is.null(gs_dist) && !is.na(gs_dist)) p(paste0("Distance: ", round(gs_dist, 1), " m")),
+      hr(),
+      strong("Greenspace Cover:"),
+      p(gs_pct_label)
     )
   })
   
@@ -2006,24 +2723,25 @@ server <- function(input, output, session) {
     
     df_long <- df |>
       mutate(IsoLabel = paste0(Mode, "\n", Time, " min")) |>
-      select(IsoLabel, Mode, GBIF_Records, GBIF_Species, Transit_Stops) |>
+      select(IsoLabel, Mode, GBIF_Records, GBIF_Species, Transit_Stops, Unique_Muni_Routes) |>
       pivot_longer(
-        cols = c(GBIF_Records, GBIF_Species, Transit_Stops),
+        cols = c(GBIF_Records, GBIF_Species, Transit_Stops, Unique_Muni_Routes),
         names_to = "Metric",
         values_to = "Value"
       ) |>
       mutate(Metric = recode(
         Metric,
-        "GBIF_Records"  = "GBIF Records",
-        "GBIF_Species"  = "Unique Species",
-        "Transit_Stops" = "Muni Stops Within"
+        "GBIF_Records"       = "GBIF Records",
+        "GBIF_Species"       = "Unique Species",
+        "Transit_Stops"      = "Muni Stops (n)",
+        "Unique_Muni_Routes" = "Muni Routes (n)"
       ))
     
     ggplot(df_long, aes(x = IsoLabel, y = Value, fill = Mode)) +
       geom_col(alpha = 0.85, width = 0.7) +
       geom_text(aes(label = Value), vjust = -0.4, size = 3.2, color = "grey30") +
       scale_fill_manual(values = mode_palette, name = "Mode") +
-      facet_wrap(~Metric, scales = "free_y", ncol = 3) +
+      facet_wrap(~Metric, scales = "free_y", ncol = 2) +
       labs(
         x = NULL,
         y = "Count",
@@ -2038,6 +2756,71 @@ server <- function(input, output, session) {
       )
   })
   
+  output$bivariateIsoPlot <- renderPlot({
+    df <- biodiversity_access_index()
+    
+    if (is.null(df) || nrow(df) == 0) {
+      plot.new()
+      title("No isochrone data available.")
+      return(NULL)
+    }
+    
+    df_plot <- df |>
+      st_drop_geometry() |>
+      mutate(
+        IsoLabel = paste0(Mode, " — ", Time, " min")
+      )
+    
+    if (!"BAI" %in% names(df_plot) || !"SF_EJ_Score" %in% names(df_plot)) {
+      plot.new()
+      title("Required BAI or EJ variables are missing.")
+      return(NULL)
+    }
+    
+    max_ej <- max(df_plot$SF_EJ_Score, na.rm = TRUE)
+    
+    df_plot <- df_plot |>
+      mutate(
+        EJ_Access = max_ej - SF_EJ_Score
+      )
+    
+    x_med <- median(df_plot$BAI, na.rm = TRUE)
+    y_med <- median(df_plot$EJ_Access, na.rm = TRUE)
+    
+    ggplot(
+      df_plot,
+      aes(
+        x = BAI,
+        y = EJ_Access,
+        color = Mode,
+        size = Greenspace_percent,
+        label = IsoLabel
+      )
+    ) +
+      geom_hline(yintercept = y_med, linetype = "dashed", color = "grey60") +
+      geom_vline(xintercept = x_med, linetype = "dashed", color = "grey60") +
+      geom_point(alpha = 0.85) +
+      geom_text(
+        nudge_y = 0.03 * diff(range(df_plot$EJ_Access, na.rm = TRUE)),
+        size = 3.5,
+        show.legend = FALSE
+      ) +
+      scale_color_manual(values = mode_palette, name = "Mode") +
+      scale_size_continuous(name = "Greenspace (%)", range = c(4, 12)) +
+      labs(
+        x = "Biodiversity Access Index (BAI)",
+        y = "Lower EJ burden (higher is better)",
+        title = "Bivariate Isochrone Plot",
+        subtitle = "Isochrones positioned by biodiversity access and environmental justice context"
+      ) +
+      theme_minimal(base_size = 14) +
+      theme(
+        plot.title = element_text(hjust = 0.5, face = "bold", size = 16),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "bottom"
+      )
+  })
+  
   output$radarPlot <- renderPlot({
     df <- biodiversity_access_index()
     if (is.null(df) || nrow(df) == 0) return(NULL)
@@ -2045,19 +2828,23 @@ server <- function(input, output, session) {
     radar_df <- df |>
       mutate(
         ModeTime = paste0(Mode, "_", Time, "m"),
-        `Transit Stops Density` = Mobility_Access_std,
-        `Unique Species`        = Biodiversity_Potential_std,
-        `Sampling Density`      = Observation_Intensity_std,
-        `Mean NDVI`             = Environmental_Quality_std,
-        `Lower EJ Burden`       = Equity_Context_std
+        `Stop\nDensity`     = Mobility_Access_std,
+        `Route\nDiversity`  = Route_Access_std,
+        `Species\nRichness` = Biodiversity_Potential_std,
+        `Obs.\nIntensity`   = Observation_Intensity_std,
+        `Vegetation\n(NDVI)`= Environmental_Quality_std,
+        `Greenspace\nCover` = Greenspace_Cover_std,
+        `EJ\nContext`       = Equity_Context_std
       ) |>
       select(
         ModeTime,
-        `Transit Stops Density`,
-        `Unique Species`,
-        `Sampling Density`,
-        `Mean NDVI`,
-        `Lower EJ Burden`
+        `Stop\nDensity`,
+        `Route\nDiversity`,
+        `Species\nRichness`,
+        `Obs.\nIntensity`,
+        `Vegetation\n(NDVI)`,
+        `Greenspace\nCover`,
+        `EJ\nContext`
       )
     
     radar_mat <- as.data.frame(radar_df[, -1])
@@ -2073,6 +2860,9 @@ server <- function(input, output, session) {
     line_cols <- mode_palette[gsub("_(.*)$", "", labels)]
     line_cols[is.na(line_cols)] <- "#666666"
     
+    # Extra margin so two-line axis labels aren't clipped
+    par(mar = c(2, 2, 3, 2))
+
     fmsb::radarchart(
       radar_mat,
       axistype = 1,
@@ -2083,10 +2873,27 @@ server <- function(input, output, session) {
       cglty = 1,
       cglwd = 0.8,
       axislabcol = "grey40",
-      vlcex = 1,
+      vlcex = 0.88,
       title = "Biodiversity Access Index Profile"
     )
     
+    # Group subheader annotations — placed radially just beyond the axis labels.
+    # Axes (clockwise from top): 1=Stop Density, 2=Route Diversity,
+    # 3=Species Richness, 4=Obs. Intensity, 5=Vegetation NDVI,
+    # 6=Greenspace Cover, 7=EJ Context
+    n_ax  <- 7
+    angs  <- pi/2 - (0:(n_ax - 1)) * (2 * pi / n_ax)
+    cat_r <- 1.48  # radius just outside axis labels (~1.2–1.3)
+
+    text(cat_r * cos(mean(angs[1:2])), cat_r * sin(mean(angs[1:2])),
+         "Urban Access",           cex = 0.72, col = "#2166ac", font = 2, xpd = TRUE)
+    text(cat_r * cos(mean(angs[3:4])), cat_r * sin(mean(angs[3:4])),
+         "Biodiversity",           cex = 0.72, col = "#1b7837", font = 2, xpd = TRUE)
+    text(cat_r * cos(mean(angs[5:6])), cat_r * sin(mean(angs[5:6])),
+         "Environment",            cex = 0.72, col = "#762a83", font = 2, xpd = TRUE)
+    text(cat_r * cos(angs[7]),         cat_r * sin(angs[7]),
+         "Environmental\nJustice", cex = 0.72, col = "#b2182b", font = 2, xpd = TRUE)
+
     legend(
       "topright",
       legend = labels,

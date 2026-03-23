@@ -117,6 +117,42 @@ if (!"ndvi_mean" %in% names(cbg_vect_sf)) {
   cbg_vect_sf$ndvi_mean <- cbg_vect_sf$ndvi_sentinel
 }
 
+# -- Per-CBG Greenspace Coverage Cache
+# Precompute greenspace area (m²) per CBG once so that per-isochrone greenspace
+# coverage can be resolved via a fast vector join instead of expensive raster
+# cellSize() operations (~40–55 s per isochrone).
+cbg_gs_cache_path <- file.path("data/cache", "cbg_greenspace_coverage.rds")
+if (file.exists(cbg_gs_cache_path)) {
+  print("Loading per-CBG greenspace coverage from cache...")
+  cbg_greenspace_coverage <- readRDS(cbg_gs_cache_path)
+} else {
+  print("Precomputing per-CBG greenspace coverage (one-time, ~30-60 s)...")
+  cbg_greenspace_coverage <- tryCatch({
+    cbg_proj  <- st_transform(cbg_vect_sf[, "GEOID"], 3857) |>
+      mutate(cbg_area_m2 = as.numeric(st_area(geometry)))
+    gs_proj   <- st_transform(osm_greenspace, 3857) |> st_make_valid()
+    gs_union  <- st_union(gs_proj)
+    cbg_gs_inter <- st_intersection(cbg_proj, gs_union)
+    result <- cbg_gs_inter |>
+      mutate(greenspace_m2 = as.numeric(st_area(geometry))) |>
+      st_drop_geometry() |>
+      group_by(GEOID) |>
+      summarise(greenspace_m2 = sum(greenspace_m2), .groups = "drop") |>
+      right_join(
+        cbg_proj |> st_drop_geometry() |> select(GEOID, cbg_area_m2),
+        by = "GEOID"
+      ) |>
+      mutate(greenspace_m2 = tidyr::replace_na(greenspace_m2, 0))
+    if (!dir.exists("data/cache")) dir.create("data/cache", recursive = TRUE)
+    saveRDS(result, cbg_gs_cache_path)
+    print("Per-CBG greenspace coverage saved to cache.")
+    result
+  }, error = function(e) {
+    warning("Per-CBG greenspace precomputation failed: ", e$message)
+    NULL
+  })
+}
+
 # -- Hotspots/Coldspots
 hotspots_shp <- file.path(cache_dir, "hotspots.shp")
 if (!file.exists(hotspots_shp)) {
@@ -188,22 +224,29 @@ gtfs_routes_sf <- tryCatch({
   warning("GTFS route shapes failed to load: ", e$message); NULL
 })
 
+# --- GTFS zip (persistent path, shared by gtfsrouter + tidytransit) ----------
+gtfs_zip_path <- "data/cache/sf_muni_gtfs.zip"
+if (!file.exists(gtfs_zip_path) && dir.exists(gtfs_path)) {
+  message("Zipping GTFS feed for caching...")
+  if (!dir.exists("data/cache")) dir.create("data/cache", recursive = TRUE)
+  old_wd <- getwd()
+  setwd(gtfs_path)
+  utils::zip(gtfs_zip_path, files = list.files(".", pattern = "\\.txt$"))
+  setwd(old_wd)
+  message("GTFS zip cached at ", gtfs_zip_path)
+}
+
 # --- gtfsrouter timetable (use pre-computed cache if available) --------------
 gtfs_router <- tryCatch({
   cache_file <- "data/cache/gtfs_timetable_monday.rds"
   if (file.exists(cache_file)) {
     message("Loading pre-computed GTFS timetable from cache...")
     readRDS(cache_file)
-  } else {
-    message("Pre-computing GTFS timetable (run R/implement_optimizations.R to cache this)...")
-    gtfs_zip_path <- tempfile(fileext = ".zip")
-    old_wd <- getwd()
-    setwd(gtfs_path)
-    utils::zip(gtfs_zip_path, files = list.files('.', pattern = "\\.txt$"))
-    setwd(old_wd)
+  } else if (file.exists(gtfs_zip_path)) {
+    message("Pre-computing GTFS timetable...")
     gr <- gtfsrouter::extract_gtfs(gtfs_zip_path)
     gtfsrouter::gtfs_timetable(gr, day = "Monday")
-  }
+  } else NULL
 }, error = function(e) {
   warning("gtfsrouter failed to initialise: ", e$message); NULL
 })
@@ -215,17 +258,31 @@ transit_iso_cache <- tryCatch({
 }, error = function(e) { NULL })
 
 # --- Stop headways via tidytransit (AM peak 7-9am) ---------------------------
+headways_cache <- "data/cache/gtfs_stop_headways.rds"
 gtfs_stop_headways <- tryCatch({
-  message("Computing stop service frequencies (AM peak 7-9am)...")
-  gt <- tidytransit::read_gtfs(gtfs_path)
-  tidytransit::get_stop_frequency(gt, start_time = 7 * 3600, end_time = 9 * 3600) |>
-    group_by(stop_id) |>
-    summarise(
-      mean_headway_min  = mean(mean_headway, na.rm = TRUE) / 60,
-      n_departures_peak = sum(n_departures, na.rm = TRUE),
-      .groups = "drop"
-    ) |>
-    mutate(stop_id = as.character(stop_id))
+  if (file.exists(headways_cache)) {
+    message("Loading stop headways from cache...")
+    readRDS(headways_cache)
+  } else if (!is.null(gtfs_zip_path) && file.exists(gtfs_zip_path)) {
+    # Reuse the zip already created for gtfsrouter above
+    message("Computing stop service frequencies (AM peak 7-9am)...")
+    gt <- tidytransit::read_gtfs(gtfs_zip_path)
+    hw <- tidytransit::get_stop_frequency(gt, start_time = 7 * 3600, end_time = 9 * 3600) |>
+      group_by(stop_id) |>
+      summarise(
+        mean_headway_min  = mean(mean_headway, na.rm = TRUE) / 60,
+        n_departures_peak = sum(n_departures, na.rm = TRUE),
+        .groups = "drop"
+      ) |>
+      mutate(stop_id = as.character(stop_id))
+    if (!dir.exists("data/cache")) dir.create("data/cache", recursive = TRUE)
+    saveRDS(hw, headways_cache)
+    message("Stop headways cached.")
+    hw
+  } else {
+    warning("No GTFS zip available for headway computation.")
+    NULL
+  }
 }, error = function(e) {
   warning("tidytransit headway computation failed: ", e$message); NULL
 })

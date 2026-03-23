@@ -74,7 +74,7 @@ All layers are toggleable in the map's layer control panel:
 
 ## Biodiversity Access Index (BAI)
 
-The BAI is a composite indicator benchmarked against **citywide empirical distributions** (ECDFs across all SF census block groups), not just the current session. It comprises five equally-weighted dimensions:
+The BAI is a composite indicator benchmarked against **citywide empirical distributions** (ECDFs across all SF census block groups), not just the current session. It comprises seven equally-weighted dimensions:
 
 | Dimension | Variable | Direction |
 |-----------|----------|-----------|

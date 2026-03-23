@@ -4,3 +4,5 @@ data
 .Rproj.user
 .positai
 old
+startup_benchmarks.csv
+startup_benchmarks.png

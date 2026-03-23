@@ -77,6 +77,41 @@ if (!"ndvi_mean" %in% names(cbg_vect_sf)) {
   cbg_vect_sf$ndvi_mean <- cbg_vect_sf$ndvi_sentinel
 }
 
+# -- Per-CBG Greenspace Coverage Cache
+# Precompute greenspace area (m²) per CBG once so that per-isochrone greenspace
+# coverage can be resolved via a fast vector join instead of expensive raster
+# cellSize() operations (~40–55 s per isochrone).
+cbg_gs_cache_path <- "/tmp/cbg_greenspace_coverage.rds"
+if (file.exists(cbg_gs_cache_path)) {
+  message("Loading per-CBG greenspace coverage from cache...")
+  cbg_greenspace_coverage <- readRDS(cbg_gs_cache_path)
+} else {
+  message("Precomputing per-CBG greenspace coverage (one-time, ~30-60 s)...")
+  cbg_greenspace_coverage <- tryCatch({
+    cbg_proj  <- st_transform(cbg_vect_sf[, "GEOID"], 3857) |>
+      mutate(cbg_area_m2 = as.numeric(st_area(geometry)))
+    gs_proj   <- st_transform(osm_greenspace, 3857) |> st_make_valid()
+    gs_union  <- st_union(gs_proj)
+    cbg_gs_inter <- st_intersection(cbg_proj, gs_union)
+    result <- cbg_gs_inter |>
+      mutate(greenspace_m2 = as.numeric(st_area(geometry))) |>
+      st_drop_geometry() |>
+      group_by(GEOID) |>
+      summarise(greenspace_m2 = sum(greenspace_m2), .groups = "drop") |>
+      right_join(
+        cbg_proj |> st_drop_geometry() |> select(GEOID, cbg_area_m2),
+        by = "GEOID"
+      ) |>
+      mutate(greenspace_m2 = tidyr::replace_na(greenspace_m2, 0))
+    saveRDS(result, cbg_gs_cache_path)
+    message("Per-CBG greenspace coverage saved to cache.")
+    result
+  }, error = function(e) {
+    warning("Per-CBG greenspace precomputation failed: ", e$message)
+    NULL
+  })
+}
+
 # -- Hotspots/Coldspots (read directly from URL via GDAL virtual file system)
 biodiv_hotspots <- st_read("/vsicurl/https://huggingface.co/datasets/boettiger-lab/sf_biodiv_access/resolve/main/hotspots.shp", quiet = TRUE) |>
   st_transform(4326)
