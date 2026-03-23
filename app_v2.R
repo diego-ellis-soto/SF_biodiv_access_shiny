@@ -6,6 +6,13 @@
 # Base app + multimodal transit + EJ + access scores + spider plot
 ###############################################################################
 
+# Next steps:
+# Color code spiderploy by access-community partney-transportation and human movement-habitats (NDVI, Greenspace), species richness, sampling density of GBIF records (both are biodiversity),envrionmental justice (CalRnviro AND SF Screening Tool)
+# Make spiderplot labels in boly and legend bigger
+# Run the backgroun calculation for each isochrone
+# WHAT to do about EJ layers in presidio and golden gate park, etc
+
+
 # =============================================================================
 # PACKAGES
 # =============================================================================
@@ -919,6 +926,8 @@ ui <- dashboardPage(
                   style = "padding-left: 18px; margin-top: 6px;",
                   tags$li("Diego Ellis Soto"),
                   tags$li("Avery Hill"),
+                  tags$li("Lizzie Edson"),
+                  tags$li("Albaro Cassanova"),
                   tags$li("Christopher J. Schell"),
                   tags$li("Carl Boettiger"),
                   tags$li("Rebecca Johnson")
