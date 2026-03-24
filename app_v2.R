@@ -12,7 +12,7 @@
 # Run the backgroun calculation for each isochrone
 # WHAT to do about EJ layers in presidio and golden gate park, etc
 
-
+q
 # =============================================================================
 # PACKAGES
 # =============================================================================
