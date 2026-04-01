@@ -47,9 +47,8 @@ library(scales)
 # Set this to your project folder if needed
 # setwd('/Users/diegoellis/Desktop/Projects/Postdoc/OLD_SF_BIODIV_ACCESS/SF_biodiv_access/backup-shiny/')
 
-# Use setup_local.R for local development (local files + caching).
-# Switch to setup.R for HuggingFace / cloud deployment (remote URLs).
-source("Rscripts/setup_local.R")
+# setup_unified.R checks local files first, falls back to HuggingFace downloads.
+source("Rscripts/setup_unified.R")
 
 # setup_local.R loads: cbg_vect_sf, ndvi, osm_greenspace, biodiv_hotspots,
 # biodiv_coldspots, greenspace_dist_raster, greenspace_osmid_raster,

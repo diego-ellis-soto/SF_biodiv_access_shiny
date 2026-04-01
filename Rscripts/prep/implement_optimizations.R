@@ -1,154 +1,52 @@
 # ============================================================================
-# Implement Quick-Win Optimizations
+# Prep: GTFS timetable, stop headways, and feed zip → data/output
 # ============================================================================
-# Run this script once to pre-compute/cache heavy data structures
-# After running, update setup.R to use cached versions
+# Inputs:  data/source/muni_gtfs-current/*.txt
+# Outputs: data/output/gtfs_timetable_monday.rds
+#          data/output/gtfs_stop_headways.csv
+#          data/output/sf_muni_gtfs.zip
+#
+# Run after updating the GTFS extract. Then upload data/output/* to HuggingFace.
 
 library(tidyverse)
-library(sf)
-library(terra)
 library(gtfsrouter)
+library(tidytransit)
+library(glue)
 
-message("\n")
-message("===============================================================================")
-message("IMPLEMENTING SHINY APP OPTIMIZATIONS")
-message("===============================================================================\n")
+out_dir <- "data/output"
+dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
-# Create cache directory
-dir.create("data/cache", showWarnings = FALSE, recursive = TRUE)
+gtfs_dir <- "data/source/muni_gtfs-current"
+if (!dir.exists(gtfs_dir)) {
+  stop(glue("GTFS folder not found: {gtfs_dir}"))
+}
+gtfs_txt <- list.files(gtfs_dir, pattern = "\\.txt$", full.names = FALSE)
+if (length(gtfs_txt) == 0L) {
+  stop(glue("No GTFS .txt files under {gtfs_dir}"))
+}
 
-# ============================================================================
-# 1. PRE-COMPUTE GTFS TIMETABLE
-# ============================================================================
-message("📊 [1/3] Pre-computing GTFS timetable (this will take ~4 seconds)...\n")
-
-gtfs_path <- 'data/source/muni_gtfs-current/'
-
-t1 <- Sys.time()
-
-gtfs_zip_path <- tempfile(fileext = ".zip")
-old_wd <- getwd()
-setwd(gtfs_path)
-utils::zip(gtfs_zip_path, files = list.files('.', pattern = "\\.txt$"))
+# --- Zip feed (same bytes consumers will download from HuggingFace) ----------
+zip_dest <- file.path(out_dir, "sf_muni_gtfs.zip")
+zip_abs  <- normalizePath(zip_dest, mustWork = FALSE)
+old_wd   <- getwd()
+setwd(gtfs_dir)
+utils::zip(zip_abs, files = gtfs_txt)
 setwd(old_wd)
 
-gtfs_router <- tryCatch({
-  gr <- gtfsrouter::extract_gtfs(gtfs_zip_path, quiet = TRUE)
-  gtfsrouter::gtfs_timetable(gr, day = "Monday")
-}, error = function(e) {
-  message("❌ Failed to create GTFS timetable: ", e$message)
-  NULL
-})
+# --- gtfsrouter Monday timetable ------------------------------------------------
+gr <- gtfsrouter::extract_gtfs(zip_dest, quiet = TRUE)
+tt <- gtfsrouter::gtfs_timetable(gr, day = "Monday")
+saveRDS(tt, file.path(out_dir, "gtfs_timetable_monday.rds"), compress = "gzip")
 
-if (!is.null(gtfs_router)) {
-  saveRDS(gtfs_router, "data/cache/gtfs_timetable_monday.rds", compress = "gzip")
-  time_taken <- as.numeric(difftime(Sys.time(), t1, units = "secs"))
-  message("✅ Saved: data/cache/gtfs_timetable_monday.rds")
-  message("   Precomputation took ", round(time_taken, 2), "s (will load in 0.3s)\n")
-} else {
-  message("⚠️  Could not pre-compute GTFS timetable. Proceeding with other optimizations.\n")
-}
+# --- AM peak headways (inspectable CSV) ---------------------------------------
+gt <- tidytransit::read_gtfs(zip_dest)
+hw <- tidytransit::get_stop_frequency(gt, start_time = 7 * 3600, end_time = 9 * 3600) |>
+  group_by(stop_id) |>
+  summarise(
+    mean_headway_min    = mean(mean_headway, na.rm = TRUE) / 60,
+    n_departures_peak   = sum(n_departures, na.rm = TRUE),
+    .groups             = "drop"
+  ) |>
+  mutate(stop_id = as.character(stop_id))
 
-# ============================================================================
-# 2. DOWNLOAD & CACHE GREENSPACE RASTERS
-# ============================================================================
-message("📊 [2/3] Caching greenspace distance rasters...\n")
-
-# Greenspace distance raster
-t1 <- Sys.time()
-message("   → Downloading greenspace_dist_raster.tif...")
-greenspace_dist_raster <- tryCatch({
-  terra::rast("/vsicurl/https://huggingface.co/datasets/boettiger-lab/sf_biodiv_access/resolve/main/nearest_greenspace_dist.tif")
-}, error = function(e) {
-  message("❌ Failed: ", e$message)
-  NULL
-})
-
-if (!is.null(greenspace_dist_raster)) {
-  terra::writeRaster(greenspace_dist_raster, 
-                     "data/cache/greenspace_dist_raster.tif", 
-                     overwrite = TRUE)
-  time_taken <- as.numeric(difftime(Sys.time(), t1, units = "secs"))
-  message("✅ Saved: data/cache/greenspace_dist_raster.tif")
-  message("   Download took ", round(time_taken, 2), "s (will load in 0.1-0.2s)\n")
-} else {
-  message("⚠️  Could not cache greenspace distance raster.\n")
-}
-
-# Greenspace OSM ID raster
-t1 <- Sys.time()
-message("   → Downloading greenspace_osmid_raster.tif...")
-greenspace_osmid_raster <- tryCatch({
-  terra::rast("/vsicurl/https://huggingface.co/datasets/boettiger-lab/sf_biodiv_access/resolve/main/nearest_greenspace_osmid.tif")
-}, error = function(e) {
-  message("❌ Failed: ", e$message)
-  NULL
-})
-
-if (!is.null(greenspace_osmid_raster)) {
-  terra::writeRaster(greenspace_osmid_raster, 
-                     "data/cache/greenspace_osmid_raster.tif", 
-                     overwrite = TRUE)
-  time_taken <- as.numeric(difftime(Sys.time(), t1, units = "secs"))
-  message("✅ Saved: data/cache/greenspace_osmid_raster.tif")
-  message("   Download took ", round(time_taken, 2), "s (will load in 0.1-0.2s)\n")
-} else {
-  message("⚠️  Could not cache greenspace OSM ID raster.\n")
-}
-
-# ============================================================================
-# 3. CONVERT OSM GREENSPACE TO GEOPACKAGE
-# ============================================================================
-message("📊 [3/3] Converting OSM greenspace shapefile to GeoPackage...\n")
-
-t1 <- Sys.time()
-message("   → Reading OSM greenspace polygons...")
-osm_greenspace <- tryCatch({
-  st_read("/vsicurl/https://huggingface.co/datasets/boettiger-lab/sf_biodiv_access/resolve/main/greenspaces_osm_nad83.shp", 
-          quiet = TRUE) |>
-    st_transform(4326)
-}, error = function(e) {
-  message("❌ Failed: ", e$message)
-  NULL
-})
-
-if (!is.null(osm_greenspace)) {
-  if (!"name" %in% names(osm_greenspace)) {
-    osm_greenspace$name <- "Unnamed Greenspace"
-  }
-  
-  message("   → Writing to GeoPackage format...")
-  st_write(osm_greenspace, "data/cache/osm_greenspace.gpkg", quiet = TRUE, append = FALSE)
-  
-  time_taken <- as.numeric(difftime(Sys.time(), t1, units = "secs"))
-  message("✅ Saved: data/cache/osm_greenspace.gpkg")
-  message("   Conversion took ", round(time_taken, 2), "s (will load in 0.1-0.2s)\n")
-} else {
-  message("⚠️  Could not convert OSM greenspace.\n")
-}
-
-# ============================================================================
-# SUMMARY & NEXT STEPS
-# ============================================================================
-message("===============================================================================")
-message("OPTIMIZATION IMPLEMENTATION COMPLETE ✅")
-message("===============================================================================\n")
-
-message("Next Steps:\n")
-message("1. Update setup.R to use cached versions:")
-message("   - Replace greenspace_dist_raster loading with:")
-message("     greenspace_dist_raster <- terra::rast('data/cache/greenspace_dist_raster.tif')\n")
-message("   - Replace greenspace_osmid_raster loading with:")
-message("     greenspace_osmid_raster <- terra::rast('data/cache/greenspace_osmid_raster.tif')\n")
-message("   - Replace osm_greenspace loading with:")
-message("     osm_greenspace <- st_read('data/cache/osm_greenspace.gpkg')\n")
-message("   - Replace gtfsrouter initialization with:")
-message("     gtfs_router <- readRDS('data/cache/gtfs_timetable_monday.rds')\n")
-
-message("2. Test the app startup speed:\n")
-message("   source('R/profile_startup.R')\n")
-
-message("3. Compare before/after benchmark plot:\n")
-message("   - Open: startup_benchmark.png\n")
-
-message("===============================================================================\n")
+readr::write_csv(hw, file.path(out_dir, "gtfs_stop_headways.csv"))

@@ -25,9 +25,18 @@ tcon |> dbExecute("
   SET threads TO 8;
 ")
 
-st_crs(st_read("data/cached/greenspaces_osm_nad83.shp"))$epsg
+greenspace_shp_candidates <- c(
+  "data/source/Greenspaces_osm_nad93/greenspaces_osm_nad83.shp",
+  "data/cached/greenspaces_osm_nad83.shp"
+)
+greenspace_shp <- greenspace_shp_candidates[file.exists(greenspace_shp_candidates)][1]
+if (is.na(greenspace_shp)) {
+  stop(glue::glue(
+    "Greenspace shapefile not found. Expected one of:\n{paste(greenspace_shp_candidates, collapse = '\n')}"
+  ))
+}
 # Read greenspace data
-greenspaces <- st_read("data/cached/greenspaces_osm_nad83.shp") %>%
+greenspaces <- st_read(greenspace_shp, quiet = TRUE) |>
   st_transform(3310)
 
 # --- --- --- --- --- ---
