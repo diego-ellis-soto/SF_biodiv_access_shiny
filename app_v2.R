@@ -1718,6 +1718,7 @@ server <- function(input, output, session) {
   
   observeEvent(input$clear_map, {
     chosen_point(NULL)
+    iso_store$data <- NULL
     leafletProxy("isoMap") |>
       removeControl("ndvi_legend") |>
       clearGroup("selected_point") |>
@@ -1729,57 +1730,63 @@ server <- function(input, output, session) {
   # ---------------------------------------------------------------------------
   # Isochrone generation
   # ---------------------------------------------------------------------------
-  isochrones_data <- eventReactive(input$generate_iso, {
+  # iso_store holds the computed sf; only written inside observeEvent(input$generate_iso).
+  # Nothing can write to it except the button press, so map clicks cannot trigger
+  # Mapbox calls regardless of what other reactives read isochrones_data().
+  iso_store       <- reactiveValues(data = NULL)
+  isochrones_data <- reactive({ iso_store$data })
+
+  observeEvent(input$generate_iso, {
+    pt <- chosen_point()
+    if (is.null(pt)) return()
+    if (length(input$transport_modes) == 0) return()
+    if (length(input$iso_times) == 0) return()
+
     leafletProxy("isoMap") |>
       removeControl("ndvi_legend") |>
       clearGroup("Isochrones") |>
       clearGroup("Transit Isochrones") |>
       clearGroup("NDVI Raster")
-    
-    pt <- chosen_point()
-    if (is.null(pt)) return(NULL)
-    if (length(input$transport_modes) == 0) return(NULL)
-    if (length(input$iso_times) == 0) return(NULL)
-    
+
     location_sf <- st_as_sf(
       data.frame(lon = pt["lon"], lat = pt["lat"]),
       coords = c("lon", "lat"),
       crs = 4326
     )
-    
+
     iso_list <- list()
-    
+
     mapbox_modes <- intersect(input$transport_modes, c("driving", "walking", "cycling", "driving-traffic"))
-    
+
     for (mode in mapbox_modes) {
       for (t in as.numeric(input$iso_times)) {
         iso <- tryCatch(
           mb_isochrone(location_sf, time = t, profile = mode, access_token = mapbox_token),
           error = function(e) NULL
         )
-        
+
         if (!is.null(iso)) {
           iso_std <- standardize_iso_sf(iso, mode_name = mode, time_min = t)
           if (!is.null(iso_std)) iso_list <- append(iso_list, list(iso_std))
         }
       }
     }
-    
+
     if ("transit" %in% input$transport_modes && !is.null(gtfs_router) && !is.null(gtfs_stops_sf)) {
       stop_dists <- st_distance(location_sf, gtfs_stops_sf)
       nearest_idx <- which.min(stop_dists)
       nearest_id <- as.character(gtfs_stops_sf$stop_id[nearest_idx])
       dep_secs <- as.numeric(input$transit_hour) * 3600
-      
+
       for (t in as.numeric(input$iso_times)) {
         iso_poly <- NULL
-        
+
         if (!is.null(transit_iso_cache) &&
             !is.null(transit_iso_cache[[nearest_id]]) &&
             !is.null(transit_iso_cache[[nearest_id]][[as.character(t)]])) {
           iso_poly <- transit_iso_cache[[nearest_id]][[as.character(t)]]
         }
-        
+
         if (is.null(iso_poly)) {
           iso_result <- tryCatch(
             gtfsrouter::gtfs_isochrone(
@@ -1791,11 +1798,11 @@ server <- function(input, output, session) {
             ),
             error = function(e) NULL
           )
-          
+
           if (!is.null(iso_result) && nrow(iso_result) > 2) {
             reachable_sf <- gtfs_stops_sf |>
               filter(stop_id %in% as.character(iso_result$stop_id))
-            
+
             if (nrow(reachable_sf) > 2) {
               iso_poly <- st_convex_hull(st_union(reachable_sf))
             } else if (nrow(reachable_sf) > 0) {
@@ -1804,7 +1811,7 @@ server <- function(input, output, session) {
             }
           }
         }
-        
+
         if (!is.null(iso_poly)) {
           iso_sf <- st_sf(
             mode = "transit",
@@ -1817,14 +1824,14 @@ server <- function(input, output, session) {
         }
       }
     }
-    
+
     if ("walk_transit" %in% input$transport_modes && !is.null(gtfs_router) && !is.null(gtfs_stops_sf)) {
       dep_secs <- as.numeric(input$transit_hour) * 3600
-      
+
       valid_times <- as.numeric(input$iso_times)[
         as.numeric(input$iso_times) > input$walk_to_stop_min
       ]
-      
+
       for (t in valid_times) {
         wt_iso <- tryCatch(
           build_walk_transit_isochrone(
@@ -1843,16 +1850,19 @@ server <- function(input, output, session) {
           ),
           error = function(e) NULL
         )
-        
+
         if (!is.null(wt_iso) && nrow(wt_iso) > 0) {
           iso_list <- append(iso_list, list(wt_iso))
         }
       }
     }
-    
-    if (length(iso_list) == 0) return(NULL)
-    
-    dplyr::bind_rows(iso_list) |>
+
+    if (length(iso_list) == 0) {
+      iso_store$data <- NULL
+      return()
+    }
+
+    iso_store$data <- dplyr::bind_rows(iso_list) |>
       st_as_sf() |>
       st_make_valid() |>
       st_transform(4326)
@@ -1994,7 +2004,7 @@ server <- function(input, output, session) {
     n_isos <- nrow(iso_data)
 
     user_point_sf <- NULL
-    pt <- chosen_point()
+    pt <- isolate(chosen_point())
     if (!is.null(pt)) {
       user_point_sf <- st_as_sf(
         data.frame(lon = pt["lon"], lat = pt["lat"]),
