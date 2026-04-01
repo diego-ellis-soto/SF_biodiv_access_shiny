@@ -1719,6 +1719,7 @@ server <- function(input, output, session) {
   observeEvent(input$clear_map, {
     chosen_point(NULL)
     leafletProxy("isoMap") |>
+      removeControl("ndvi_legend") |>
       clearGroup("selected_point") |>
       clearGroup("Isochrones") |>
       clearGroup("Transit Isochrones") |>
@@ -1730,6 +1731,7 @@ server <- function(input, output, session) {
   # ---------------------------------------------------------------------------
   isochrones_data <- eventReactive(input$generate_iso, {
     leafletProxy("isoMap") |>
+      removeControl("ndvi_legend") |>
       clearGroup("Isochrones") |>
       clearGroup("Transit Isochrones") |>
       clearGroup("NDVI Raster")
@@ -1864,6 +1866,7 @@ server <- function(input, output, session) {
     req(iso_data)
     
     leafletProxy("isoMap") |>
+      removeControl("ndvi_legend") |>
       clearGroup("Isochrones") |>
       clearGroup("Transit Isochrones") |>
       clearGroup("NDVI Raster")
@@ -1963,7 +1966,10 @@ server <- function(input, output, session) {
         ndvi_pal <- colorNumeric("YlGn", domain = range(ndvi_vals, na.rm = TRUE), na.color = "transparent")
         leafletProxy("isoMap") |>
           addRasterImage(x = ndvi_mask, colors = ndvi_pal, opacity = 0.7, project = TRUE, group = "NDVI Raster") |>
-          addLegend(position = "bottomright", pal = ndvi_pal, values = ndvi_vals, title = "NDVI")
+          addLegend(
+            position = "bottomright", pal = ndvi_pal, values = ndvi_vals, title = "NDVI",
+            layerId = "ndvi_legend"
+          )
       }
     }
   })
