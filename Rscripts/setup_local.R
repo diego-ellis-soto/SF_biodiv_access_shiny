@@ -20,7 +20,8 @@ library(shinycssloaders)
 # ------------------------------------------------
 # 1) API Keys
 # ------------------------------------------------
-mapbox_token <- Sys.getenv("MAPBOX_TOKEN")
+# mapbox_token <- Sys.getenv("MAPBOX_TOKEN")
+# mapbox_token <- "pk.eyJ1Ijoia3dhbGtlcnRjdSIsImEiOiJjbHc3NmI0cDMxYzhyMmt0OXBiYnltMjVtIn0.Thtu6WqIhOfin6AykskM2g" 
 # mb_access_token(mapbox_token, install = FALSE)
 
 # ============================================================================
@@ -183,7 +184,7 @@ rsf_projects <- st_read("data/source/RSF_Program_Projects_polygons.gpkg", quiet 
 # GTFS Data Loading (SF Muni)
 # ============================================================================
 
-gtfs_path <- '/Users/diegoellis/Desktop/RSF_next_steps/GPFS_OSM_Transit/sf_muni_gtfs-current/'
+gtfs_path <- 'data/source/muni_gtfs-current/'
 
 # --- Transit stops -----------------------------------------------------------
 gtfs_stops_sf <- tryCatch({
@@ -229,9 +230,10 @@ gtfs_zip_path <- "data/cache/sf_muni_gtfs.zip"
 if (!file.exists(gtfs_zip_path) && dir.exists(gtfs_path)) {
   message("Zipping GTFS feed for caching...")
   if (!dir.exists("data/cache")) dir.create("data/cache", recursive = TRUE)
+  gtfs_zip_abs <- normalizePath(gtfs_zip_path, mustWork = FALSE)
   old_wd <- getwd()
   setwd(gtfs_path)
-  utils::zip(gtfs_zip_path, files = list.files(".", pattern = "\\.txt$"))
+  utils::zip(gtfs_zip_abs, files = list.files(".", pattern = "\\.txt$"))
   setwd(old_wd)
   message("GTFS zip cached at ", gtfs_zip_path)
 }
@@ -296,10 +298,7 @@ if (!is.null(gtfs_stop_headways) && !is.null(gtfs_stops_sf)) {
 # ============================================================================
 # CalEnviroScreen 4.0
 # ============================================================================
-calenviro_path <- '/Users/diegoellis/Downloads/calenviroscreen40gdb_F_2021.gdb'
-if (!file.exists(calenviro_path)) {
-  calenviro_path <- '/Users/diegoellis/Desktop/Projects/Presentations/Data_Schell_Lab_Tutorial/calenviroscreen40gdb_F_2021.gdb'
-}
+calenviro_path <- 'data/source/calenviroscreen40gdb_F_2021.gdb'
 
 cenv_sf <- tryCatch({
   message("Loading CalEnviroScreen...")
@@ -320,7 +319,7 @@ cenv_sf <- tryCatch({
 # ============================================================================
 # SF Environmental Justice Communities
 # ============================================================================
-sf_ej_path <- '/Users/diegoellis/Downloads/San Francisco Environmental Justice Communities Map_20251217/geo_export_a21b0a0a-7306-46fd-8381-06581cdbe6e9.shp'
+sf_ej_path <- 'data/source/San Francisco Environmental Justice Communities Map_20260401/geo_export_e303e420-19f7-4166-9736-c1dbeda5b82e.shp'
 
 sf_ej_sf <- tryCatch({
   message("Loading SF EJ Communities layer...")

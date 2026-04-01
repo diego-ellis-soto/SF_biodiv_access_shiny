@@ -22,7 +22,7 @@ dir.create("data/cache", showWarnings = FALSE, recursive = TRUE)
 # ============================================================================
 message("📊 [1/3] Pre-computing GTFS timetable (this will take ~4 seconds)...\n")
 
-gtfs_path <- '/Users/diegoellis/Desktop/RSF_next_steps/GPFS_OSM_Transit/sf_muni_gtfs-current/'
+gtfs_path <- 'data/source/muni_gtfs-current/'
 
 t1 <- Sys.time()
 
