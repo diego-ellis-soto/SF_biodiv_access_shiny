@@ -787,8 +787,8 @@ ui <- dashboardPage(
                   style = "padding-left: 18px; margin-top: 6px;",
                   tags$li("Diego Ellis Soto"),
                   tags$li("Avery Hill"),
-                  tags$li("Lizzie Edson"),
-                  tags$li("Albaro Cassanova"),
+                  tags$li("Lizzy Edson"),
+                  tags$li("Álvaro Casanova"),
                   tags$li("Christopher J. Schell"),
                   tags$li("Carl Boettiger"),
                   tags$li("Rebecca Johnson")
