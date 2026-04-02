@@ -52,6 +52,7 @@ source("Rscripts/setup_unified.R")
 
 # setup_local.R loads: cbg_vect_sf, ndvi, osm_greenspace, biodiv_hotspots,
 # biodiv_coldspots, greenspace_dist_raster, greenspace_osmid_raster,
+# rsfprogram_dist_raster, rsfprogram_id_raster,
 # gbif_parquet (local parquet path), rsf_projects,
 # gtfs_stops_sf, gtfs_routes_sf, gtfs_router,
 # cenv_sf, sf_ej_sf
@@ -619,6 +620,10 @@ ui <- dashboardPage(
         ),
         
         fluidRow(
+          box(title = "Closest RSF Program", status = "success", solidHeader = TRUE, width = 12, uiOutput("closestRSFProgramUI"))
+        ),
+        
+        fluidRow(
           box(
             title = "Biodiversity Access Index Profile",
             status = "warning", solidHeader = TRUE, width = 12,
@@ -972,6 +977,9 @@ ui <- dashboardPage(
                   tags$td("Derived from OSM")),
                 tags$tr(tags$td(icon("map"), " RSF Program Projects"),
                   tags$td("Partner project polygons from the Reimagining SF Initiative"),
+                  tags$td("RSF Initiative")),
+                tags$tr(tags$td(icon("ruler"), " RSF Program Distance"),
+                  tags$td("Raster showing distance (m) to the nearest RSF program polygon"),
                   tags$td("RSF Initiative")),
                 tags$tr(tags$td(icon("fire"), " Hotspots (KnowBR)"),
                   tags$td("Block groups with anomalously high species richness relative to sampling effort"),
@@ -1540,6 +1548,38 @@ server <- function(input, output, session) {
       }
     }
     
+    if (exists("rsfprogram_dist_raster")) {
+      rsf_vals_clean <- values(rsfprogram_dist_raster) |>
+        as.vector() |>
+        (\(x) x[is.finite(x)])()
+      
+      if (length(rsf_vals_clean) > 0) {
+        upper_rsf <- quantile(rsf_vals_clean, 0.998, na.rm = TRUE)
+        
+        pal_rsf_dist <- colorNumeric(
+          palette = rev(brewer.pal(9, "Purples")),
+          domain = c(0, upper_rsf),
+          na.color = "transparent"
+        )
+        
+        m <- m |>
+          addRasterImage(
+            x = rsfprogram_dist_raster,
+            colors = pal_rsf_dist,
+            opacity = 0.65,
+            project = TRUE,
+            group = "RSF Program Distance"
+          ) |>
+          addLegend(
+            position = "bottomright",
+            pal = pal_rsf_dist,
+            values = c(0, upper_rsf),
+            title = "Distance to<br>RSF program (m)",
+            group = "RSF Program Distance"
+          )
+      }
+    }
+    
     if (!is.null(gtfs_routes_sf)) {
       m <- m |>
         addPolylines(
@@ -1644,7 +1684,7 @@ server <- function(input, output, session) {
       addLayersControl(
         baseGroups = c("Street Map (Default)", "Satellite (ESRI)", "CartoDB.Positron"),
         overlayGroups = c(
-          "Income", "Greenspace", "Greenspace Distance", "RSF Program Projects",
+          "Income", "Greenspace", "Greenspace Distance", "RSF Program Distance", "RSF Program Projects",
           "Hotspots (KnowBR)", "Coldspots (KnowBR)",
           "Species Richness", "Data Availability",
           "CalEnviroScreen (CI Score)", "SF EJ Communities",
@@ -1656,6 +1696,7 @@ server <- function(input, output, session) {
       hideGroup("Income") |>
       hideGroup("Greenspace") |>
       hideGroup("Greenspace Distance") |>
+      hideGroup("RSF Program Distance") |>
       hideGroup("RSF Program Projects") |>
       hideGroup("Hotspots (KnowBR)") |>
       hideGroup("Coldspots (KnowBR)") |>
@@ -2022,6 +2063,23 @@ server <- function(input, output, session) {
         }
       }, silent = TRUE)
     }
+    
+    min_rsf_dist_global <- NA_real_
+    rsf_program_name_global <- NA_character_
+    if (!is.null(user_point_sf) && exists("rsfprogram_dist_raster") && exists("rsfprogram_id_raster") && exists("rsf_projects")) {
+      try({
+        min_rsf_dist_global <- (rsfprogram_dist_raster |> extract(vect(user_point_sf)) |> pull(1))[1]
+        user_point_rsf_pid <- (rsfprogram_id_raster |> extract(vect(user_point_sf)) |> pull(2))[1]
+        rsf_program_name_global <- rsf_projects |>
+          dplyr::filter(as.numeric(.data$polygon_id) == as.numeric(user_point_rsf_pid)) |>
+          dplyr::pull(.data$prj_name)
+        if (length(rsf_program_name_global) == 0 || is.na(rsf_program_name_global[1])) {
+          rsf_program_name_global <- "Unknown RSF program"
+        } else {
+          rsf_program_name_global <- rsf_program_name_global[1]
+        }
+      }, silent = TRUE)
+    }
 
 
     withProgress(message = "Analyzing isochrones...", value = 0, {
@@ -2240,6 +2298,8 @@ server <- function(input, output, session) {
         SF_EJ_Score            = mean_ej_score,
         closest_greenspace     = osm_greenspace_name_global,
         closest_greenspace_dist_m = min_dist_val_global,
+        closest_rsf_program    = rsf_program_name_global,
+        closest_rsf_program_dist_m = min_rsf_dist_global,
         stringsAsFactors       = FALSE
       )
       
@@ -2282,6 +2342,17 @@ server <- function(input, output, session) {
       } else {
         attr(results, "closest_greenspace") <- "None"
         attr(results, "closest_greenspace_dist_m") <- NA_real_
+      }
+      
+      closest_rsf <- results |>
+        filter(!is.na(closest_rsf_program_dist_m)) |>
+        slice_min(closest_rsf_program_dist_m, n = 1)
+      if (nrow(closest_rsf) > 0) {
+        attr(results, "closest_rsf_program") <- closest_rsf$closest_rsf_program[1]
+        attr(results, "closest_rsf_program_dist_m") <- closest_rsf$closest_rsf_program_dist_m[1]
+      } else {
+        attr(results, "closest_rsf_program") <- "None"
+        attr(results, "closest_rsf_program_dist_m") <- NA_real_
       }
     }
     
@@ -2435,6 +2506,22 @@ server <- function(input, output, session) {
       hr(),
       strong("Greenspace Cover:"),
       p(gs_pct_label)
+    )
+  })
+  
+  output$closestRSFProgramUI <- renderUI({
+    df <- socio_data()
+    if (nrow(df) == 0) return(NULL)
+    
+    rsf_name <- attr(df, "closest_rsf_program")
+    rsf_dist <- attr(df, "closest_rsf_program_dist_m")
+    
+    if (is.null(rsf_name) || is.na(rsf_name)) rsf_name <- "None"
+    
+    tagList(
+      strong("Nearest RSF program (to your selected point):"),
+      p(rsf_name),
+      if (!is.null(rsf_dist) && !is.na(rsf_dist)) p(paste0("Distance: ", round(rsf_dist, 1), " m"))
     )
   })
   

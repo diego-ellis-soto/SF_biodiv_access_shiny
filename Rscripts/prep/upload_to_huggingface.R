@@ -25,6 +25,8 @@ dir.create(upload_dir, recursive = TRUE, showWarnings = FALSE)
 artifacts <- c(
   "nearest_greenspace_dist.tif",
   "nearest_greenspace_osmid.tif",
+  "nearest_rsfprogram_dist.tif",
+  "nearest_rsfprogram_id.tif",
   "gbif_census_ndvi_anno.parquet",
   "gtfs_timetable_monday.rds",
   "gtfs_stop_headways.csv",

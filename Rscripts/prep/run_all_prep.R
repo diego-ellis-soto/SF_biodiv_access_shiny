@@ -8,6 +8,7 @@
 #   2. CalEnviroScreen + SF EJ → GeoPackages
 #   3. GTFS zip + timetable + stop headways (~20–30 s; cached for app startup)
 #   4. Greenspace distance rasters (DuckDB; slow)
+#   5. RSF Program nearest rasters (DuckDB; same grid as 4)
 #
 # Then upload files from data/output/ to the HuggingFace dataset (manually or
 # see comments in upload_to_huggingface.R).
@@ -16,3 +17,4 @@ source("Rscripts/prep/create_annotated_gbif_parquet.R")
 source("Rscripts/prep/build_equity_layers.R")
 source("Rscripts/prep/implement_optimizations.R")
 source("Rscripts/prep/making-greenspace-raster.R")
+source("Rscripts/prep/making-rsfprogram-raster.R")

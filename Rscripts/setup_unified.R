@@ -65,6 +65,9 @@ message("[setup_unified] loading greenspace distance rasters + NDVI…")
 greenspace_dist_raster <- terra::rast(hf_or_local("nearest_greenspace_dist.tif"))
 greenspace_osmid_raster <- terra::rast(hf_or_local("nearest_greenspace_osmid.tif"))
 
+rsfprogram_dist_raster <- terra::rast(hf_or_local("nearest_rsfprogram_dist.tif"))
+rsfprogram_id_raster <- terra::rast(hf_or_local("nearest_rsfprogram_id.tif"))
+
 # ============================================================================
 # Load Data: NDVI raster
 # ============================================================================
