@@ -171,6 +171,7 @@ choose_existing_sf_object <- function(candidates) {
 
 safe_vect_gbif_intersection <- function(poly_i) {
   out <- tryCatch({
+    # browser()
     if (exists("vect_gbif")) {
       st_as_sf(intersect(vect_gbif, vect(poly_i)))
     } else if (exists("sf_gbif")) {
@@ -2116,6 +2117,7 @@ server <- function(input, output, session) {
       }
       
       inter_gbif <- safe_vect_gbif_intersection(poly_i)
+      
       n_records <- if (!is.null(inter_gbif)) nrow(inter_gbif) else 0
       n_species <- if (!is.null(inter_gbif) && "species" %in% names(inter_gbif) && nrow(inter_gbif) > 0) length(unique(inter_gbif$species)) else 0
       n_birds   <- if (!is.null(inter_gbif) && nrow(inter_gbif) > 0 && all(c("species", "class") %in% names(inter_gbif))) length(unique(inter_gbif$species[inter_gbif$class == "Aves"])) else 0

@@ -70,7 +70,8 @@ ndvi <- terra::rast(hf_or_local("SF_EastBay_NDVI_Sentinel_10.tif"))
 # ============================================================================
 # Load Data: GBIF observations (parquet, queried via DuckDB in server)
 # ============================================================================
-gbif_parquet <- hf_or_local("gbif_census_ndvi_anno.parquet")
+sf_gbif <- arrow::read_parquet(hf_or_local("gbif_census_ndvi_anno.parquet")) |>
+  st_as_sf(wkt = "geom_wkt", crs = 4326)
 
 # ============================================================================
 # Load Data: Census block groups (CBG)
@@ -157,14 +158,17 @@ sf_ej_sf <- tryCatch({
 # ============================================================================
 # Load Data: GTFS (SF Muni)
 # ============================================================================
+source(file.path("Rscripts", "gtfs_feed_txt_filter.R"), local = TRUE)
+
 gtfs_zip_path <- hf_or_local("sf_muni_gtfs.zip")
 
-# Unzip into a sibling directory inside cache_dir so txt files are accessible
+# Unzip into cache_dir; strip license/readme .txt (SFMTA ships prose that breaks tidytransit)
 gtfs_unzip_dir <- file.path(cache_dir, "muni_gtfs")
-if (!dir.exists(gtfs_unzip_dir) || length(list.files(gtfs_unzip_dir, pattern = "\\.txt$")) == 0) {
-  dir.create(gtfs_unzip_dir, recursive = TRUE, showWarnings = FALSE)
-  unzip(gtfs_zip_path, exdir = gtfs_unzip_dir)
+dir.create(gtfs_unzip_dir, recursive = TRUE, showWarnings = FALSE)
+if (!dir.exists(gtfs_unzip_dir) || length(list.files(gtfs_unzip_dir, pattern = "\\.txt$")) == 0L) {
+  unzip(gtfs_zip_path, exdir = gtfs_unzip_dir, overwrite = TRUE)
 }
+strip_gtfs_txt_noise(gtfs_unzip_dir)
 gtfs_path <- gtfs_unzip_dir
 
 # --- Transit stops -----------------------------------------------------------
@@ -234,7 +238,7 @@ gtfs_stop_headways <- tryCatch({
     readr::read_csv(headways_path, show_col_types = FALSE) |>
       mutate(stop_id = as.character(stop_id))
   } else {
-    gt <- tidytransit::read_gtfs(gtfs_zip_path)
+    gt <- tidytransit::read_gtfs(gtfs_path)
     hw <- tidytransit::get_stop_frequency(gt, start_time = 7 * 3600, end_time = 9 * 3600) |>
       group_by(stop_id) |>
       summarise(
