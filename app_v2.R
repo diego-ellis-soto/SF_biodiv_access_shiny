@@ -1295,7 +1295,7 @@ server <- function(input, output, session) {
   # Benchmarks for BAI
   # ---------------------------------------------------------------------------
   city_benchmarks <- local({
-    bench_cache <- "data/cache/city_benchmarks.rds"
+    bench_cache <- file.path(cache_dir, "city_benchmarks.rds")
     if (file.exists(bench_cache)) {
       message("Loading city_benchmarks from cache...")
       return(readRDS(bench_cache))
@@ -1417,7 +1417,7 @@ server <- function(input, output, session) {
       greenspace_cover = greenspace_cover_bench[is.finite(greenspace_cover_bench)]
     )
 
-    if (!dir.exists("data/cache")) dir.create("data/cache", recursive = TRUE)
+    if (!dir.exists(cache_dir)) dir.create(cache_dir, recursive = TRUE)
     saveRDS(bench, bench_cache)
     message("City benchmarks saved to cache.")
     bench
