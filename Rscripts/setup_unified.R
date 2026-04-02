@@ -18,6 +18,7 @@ library(sjPlot)
 library(sjlabelled)
 library(bslib)
 library(shinycssloaders)
+library(glue)
 
 # ============================================================================
 # Setup: HuggingFace base URL and cache directory

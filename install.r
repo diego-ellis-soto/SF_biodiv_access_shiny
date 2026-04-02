@@ -8,6 +8,7 @@ install.packages(c(
   "DT",
   "duckdb",
   "fmsb",
+  "glue",
   "gtfsrouter",
   "leaflet",
   "mapboxapi",
