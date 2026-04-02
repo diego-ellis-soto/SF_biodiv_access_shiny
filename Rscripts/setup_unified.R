@@ -26,7 +26,7 @@ HF_BASE <- "https://huggingface.co/datasets/boettiger-lab/sf_biodiv_access/resol
 
 # Use data/cached/ when running locally (writable), otherwise fall back to
 # /tmp/sf_biodiv_cache/ for read-only environments like HuggingFace Spaces.
-cache_dir <- if (file.access("data", mode = 2) == 0) "data/cached" else "/tmp/sf_biodiv_cache"
+cache_dir <- if (file.access(".", mode = 2) == 0) "data/cached" else "/tmp/sf_biodiv_cache"
 dir.create(cache_dir, recursive = TRUE, showWarnings = FALSE)
 
 # Helper: if the file already exists in data/cached/, return that path.
