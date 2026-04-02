@@ -15,6 +15,7 @@ library(glue)
 
 out_dir <- "data/output"
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+out_dir_abs <- normalizePath(out_dir, mustWork = TRUE)
 
 gtfs_dir <- "data/source/muni_gtfs-current"
 if (!dir.exists(gtfs_dir)) {
@@ -22,24 +23,24 @@ if (!dir.exists(gtfs_dir)) {
 }
 gtfs_txt <- list.files(gtfs_dir, pattern = "\\.txt$", full.names = FALSE)
 if (length(gtfs_txt) == 0L) {
-  stop(glue("No GTFS .txt files under {gtfs_dir}"))
+  stop(glue("No .txt files under {gtfs_dir}"))
 }
 
 # --- Zip feed (same bytes consumers will download from HuggingFace) ----------
-zip_dest <- file.path(out_dir, "sf_muni_gtfs.zip")
-zip_abs  <- normalizePath(zip_dest, mustWork = FALSE)
-old_wd   <- getwd()
+# Absolute zip path before setwd(); normalizePath(zip) is NA if the file does not exist yet
+zip_abs <- file.path(out_dir_abs, "sf_muni_gtfs.zip")
+old_wd <- getwd()
 setwd(gtfs_dir)
 utils::zip(zip_abs, files = gtfs_txt)
 setwd(old_wd)
 
 # --- gtfsrouter Monday timetable ------------------------------------------------
-gr <- gtfsrouter::extract_gtfs(zip_dest, quiet = TRUE)
+gr <- gtfsrouter::extract_gtfs(zip_abs, quiet = TRUE)
 tt <- gtfsrouter::gtfs_timetable(gr, day = "Monday")
-saveRDS(tt, file.path(out_dir, "gtfs_timetable_monday.rds"), compress = "gzip")
+saveRDS(tt, file.path(out_dir_abs, "gtfs_timetable_monday.rds"), compress = "gzip")
 
 # --- AM peak headways (inspectable CSV) ---------------------------------------
-gt <- tidytransit::read_gtfs(zip_dest)
+gt <- tidytransit::read_gtfs(zip_abs)
 hw <- tidytransit::get_stop_frequency(gt, start_time = 7 * 3600, end_time = 9 * 3600) |>
   group_by(stop_id) |>
   summarise(
@@ -49,4 +50,4 @@ hw <- tidytransit::get_stop_frequency(gt, start_time = 7 * 3600, end_time = 9 * 
   ) |>
   mutate(stop_id = as.character(stop_id))
 
-readr::write_csv(hw, file.path(out_dir, "gtfs_stop_headways.csv"))
+readr::write_csv(hw, file.path(out_dir_abs, "gtfs_stop_headways.csv"))

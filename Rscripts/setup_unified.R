@@ -136,7 +136,7 @@ cenv_sf <- tryCatch({
 # Load Data: SF Environmental Justice Communities
 # ============================================================================
 sf_ej_sf <- tryCatch({
-  sf::st_read(hf_or_local("sf_ej_communities.gpkg"), quiet = TRUE) |>
+  sf::st_read(hf_or_local("sf_ej_communities_map.gpkg"), quiet = TRUE) |>
     dplyr::mutate(
       symbol_hex = stringr::str_split(symbol_rgb, ",\\s*") |>
         lapply(function(x) sprintf("#%02X%02X%02X",
@@ -158,17 +158,15 @@ sf_ej_sf <- tryCatch({
 # ============================================================================
 # Load Data: GTFS (SF Muni)
 # ============================================================================
-source(file.path("Rscripts", "gtfs_feed_txt_filter.R"), local = TRUE)
 
 gtfs_zip_path <- hf_or_local("sf_muni_gtfs.zip")
 
-# Unzip into cache_dir; strip license/readme .txt (SFMTA ships prose that breaks tidytransit)
+# Unzip for read.csv(stops.txt, …); tidytransit/gtfsrouter read the .zip (gtfsio needs a zip path)
 gtfs_unzip_dir <- file.path(cache_dir, "muni_gtfs")
 dir.create(gtfs_unzip_dir, recursive = TRUE, showWarnings = FALSE)
 if (!dir.exists(gtfs_unzip_dir) || length(list.files(gtfs_unzip_dir, pattern = "\\.txt$")) == 0L) {
   unzip(gtfs_zip_path, exdir = gtfs_unzip_dir, overwrite = TRUE)
 }
-strip_gtfs_txt_noise(gtfs_unzip_dir)
 gtfs_path <- gtfs_unzip_dir
 
 # --- Transit stops -----------------------------------------------------------
@@ -238,7 +236,7 @@ gtfs_stop_headways <- tryCatch({
     readr::read_csv(headways_path, show_col_types = FALSE) |>
       mutate(stop_id = as.character(stop_id))
   } else {
-    gt <- tidytransit::read_gtfs(gtfs_path)
+    gt <- tidytransit::read_gtfs(gtfs_zip_path)
     hw <- tidytransit::get_stop_frequency(gt, start_time = 7 * 3600, end_time = 9 * 3600) |>
       group_by(stop_id) |>
       summarise(

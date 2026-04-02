@@ -32,7 +32,7 @@ artifacts <- c(
   "gtfs_stop_headways.csv",
   "sf_muni_gtfs.zip",
   "calenviro_sf.gpkg",
-  "sf_ej_communities.gpkg",
+  "sf_ej_communities_map.gpkg",
   "RSF_Program_Projects_polygons.gpkg"
 )
 

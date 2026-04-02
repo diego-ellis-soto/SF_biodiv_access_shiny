@@ -25,17 +25,8 @@ tcon |> dbExecute("
   SET threads TO 8;
 ")
 
-greenspace_shp_candidates <- c(
-  "data/source/Greenspaces_osm_nad93/greenspaces_osm_nad83.shp",
-  "data/cached/greenspaces_osm_nad83.shp"
-)
-greenspace_shp <- greenspace_shp_candidates[file.exists(greenspace_shp_candidates)][1]
-if (is.na(greenspace_shp)) {
-  stop(glue::glue(
-    "Greenspace shapefile not found. Expected one of:\n{paste(greenspace_shp_candidates, collapse = '\n')}"
-  ))
-}
-# Read greenspace data
+greenspace_shp <- "data/source/Greenspaces_osm_nad93/greenspaces_osm_nad83.shp"
+
 greenspaces <- st_read(greenspace_shp, quiet = TRUE) |>
   st_transform(3310)
 
@@ -98,18 +89,17 @@ template_pts %>%
   write_sf("data/intermediate/template_pts.gpkg")
 
 # Load data into DuckDB and set up geometries
-tcon %>% dbExecute("
+tcon %>% dbExecute(glue("
 CREATE OR REPLACE TABLE greenspace_geo
 AS
 SELECT * EXCLUDE geom,
   ST_TRANSFORM(geom, 'EPSG:4269', 'EPSG:3310', always_xy := true) AS geom3310,
   ST_Centroid(geom) AS centroid_geom3310,
   ST_SimplifyPreserveTopology(ST_TRANSFORM(geom, 'EPSG:4269', 'EPSG:3310', always_xy := true), 10) AS simple_geom3310
-FROM ST_READ('data/cached/greenspaces_osm_nad83.shp');
+FROM ST_READ('{greenspace_shp}');
 
 CREATE INDEX idx_grn_simple_geom ON greenspace_geo USING RTREE (simple_geom3310);
-CREATE INDEX idx_grn_centroid_geom ON greenspace_geo USING RTREE (centroid_geom3310);
-")
+"))
 
 # Load template grid into DuckDB
 tcon %>% dbExecute("
