@@ -66,8 +66,8 @@ theme <- bs_theme(
   bootswatch   = "minty",
   base_font    = font_google("Roboto"),
   heading_font = font_google("Roboto Slab"),
-  bg           = "#f0fff0",
-  fg           = "#2e8b57"
+  bg           = "#f3f8f5",
+  fg           = "#3d5c4a"
 )
 
 # =============================================================================
@@ -525,6 +525,7 @@ ui <- dashboardPage(
   ),
   
   dashboardBody(
+    tags$head(tags$link(rel = "stylesheet", type = "text/css", href = "app_pastel.css")),
     theme = theme,
     useShinyjs(),
     div(id = "loading", style = "display:none; font-size:20px; color:red;", "Calculating..."),
@@ -534,7 +535,7 @@ ui <- dashboardPage(
         tabName = "isochrone",
         fluidRow(
           box(
-            title = "Controls", status = "success", solidHeader = TRUE, width = 4,
+            title = "Controls", status = "success", solidHeader = TRUE, width = 3,
             
             radioButtons(
               "location_choice",
@@ -607,20 +608,20 @@ ui <- dashboardPage(
           ),
           
           box(
-            title = "Map", status = "success", solidHeader = TRUE, width = 8,
+            title = "Map", status = "success", solidHeader = TRUE, width = 9,
             leafletOutput("isoMap", height = 600)
           )
         ),
         
         fluidRow(
-          box(title = "Biodiversity Access Score", status = "success", solidHeader = TRUE, width = 3, uiOutput("bioScoreBox")),
-          box(title = "Transit Access Score", status = "primary", solidHeader = TRUE, width = 3, uiOutput("transitScoreBox")),
-          box(title = "Biodiversity Access Index", status = "warning", solidHeader = TRUE, width = 3, uiOutput("biodiversityAccessIndexBox")),
-          box(title = "Closest Greenspace", status = "success", solidHeader = TRUE, width = 3, uiOutput("closestGreenspaceUI"))
+          box(title = "Biodiversity Access Score", status = "success", solidHeader = TRUE, width = 4, uiOutput("bioScoreBox")),
+          box(title = "Transit Access Score", status = "primary", solidHeader = TRUE, width = 4, uiOutput("transitScoreBox")),
+          box(title = "Biodiversity Access Index", status = "warning", solidHeader = TRUE, width = 4, uiOutput("biodiversityAccessIndexBox"))
         ),
         
         fluidRow(
-          box(title = "Closest RSF Program", status = "success", solidHeader = TRUE, width = 12, uiOutput("closestRSFProgramUI"))
+          box(title = "Closest Greenspace", status = "success", solidHeader = TRUE, width = 6, uiOutput("closestGreenspaceUI")),
+          box(title = "Closest RSF Program", status = "success", solidHeader = TRUE, width = 6, uiOutput("closestRSFProgramUI"))
         ),
         
         fluidRow(
@@ -955,7 +956,7 @@ ui <- dashboardPage(
             status = "primary", solidHeader = TRUE, width = 12,
             p(
               style = "font-size: 13px; color: #555;",
-              "All layers are toggled in the map's layer-control panel (top-right). Base maps can be switched between Street, Satellite, and CartoDB Positron."
+              "All layers are toggled in the map's layer-control panel (top-right). The default base map is CartoDB Positron; you can switch to Street or Satellite."
             ),
             tags$table(
               class = "table table-hover table-sm",
@@ -1446,9 +1447,9 @@ server <- function(input, output, session) {
     coldspot_sf <- safe_biodiv_coldspots()
     
     m <- leaflet() |>
+      addProviderTiles(providers$CartoDB.Positron, group = "CartoDB.Positron") |>
       addTiles(group = "Street Map (Default)") |>
       addProviderTiles(providers$Esri.WorldImagery, group = "Satellite (ESRI)") |>
-      addProviderTiles(providers$CartoDB.Positron, group = "CartoDB.Positron") |>
       addPolygons(
         data = cbg_vect_sf, group = "Income",
         fillColor = ~pal_cbg(medincE), fillOpacity = 0.6,
@@ -1682,7 +1683,7 @@ server <- function(input, output, session) {
     m |>
       setView(lng = -122.4194, lat = 37.7749, zoom = 12) |>
       addLayersControl(
-        baseGroups = c("Street Map (Default)", "Satellite (ESRI)", "CartoDB.Positron"),
+        baseGroups = c("CartoDB.Positron", "Street Map (Default)", "Satellite (ESRI)"),
         overlayGroups = c(
           "Income", "Greenspace", "Greenspace Distance", "RSF Program Distance", "RSF Program Projects",
           "Hotspots (KnowBR)", "Coldspots (KnowBR)",
