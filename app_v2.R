@@ -79,32 +79,25 @@ theme <- bs_theme(
 # =============================================================================
 # GBIF UI VALUES FROM PARQUET
 # =============================================================================
-gbif_classes <- character(0)
-gbif_families <- character(0)
+con_temp <- dbConnect(duckdb::duckdb(), dbdir = ":memory:")
+dbExecute(con_temp, "INSTALL spatial; LOAD spatial;")
+dbExecute(con_temp, "INSTALL httpfs; LOAD httpfs;")
+gbif_tab_temp <- tbl(con_temp, glue("read_parquet('{gbif_parquet}')"))
 
-if (exists("gbif_parquet")) {
-  con_temp <- dbConnect(duckdb::duckdb(), dbdir = ":memory:")
-  try({
-    dbExecute(con_temp, "INSTALL spatial; LOAD spatial;")
-    dbExecute(con_temp, "INSTALL httpfs; LOAD httpfs;")
-    gbif_tab_temp <- tbl(con_temp, paste0("read_parquet('", gbif_parquet, "')"))
-    
-    gbif_classes <- gbif_tab_temp |>
-      distinct(class) |>
-      collect() |>
-      pull(class) |>
-      unique() |>
-      sort()
-    
-    gbif_families <- gbif_tab_temp |>
-      distinct(family) |>
-      collect() |>
-      pull(family) |>
-      unique() |>
-      sort()
-  }, silent = TRUE)
-  try(dbDisconnect(con_temp, shutdown = TRUE), silent = TRUE)
-}
+gbif_classes <- gbif_tab_temp |>
+  distinct(class) |>
+  collect() |>
+  pull(class) |>
+  sort()
+
+gbif_families <- gbif_tab_temp |>
+  distinct(family) |>
+  collect() |>
+  pull(family) |>
+  sort()
+
+dbDisconnect(con_temp, shutdown = TRUE)
+rm(con_temp, gbif_tab_temp)
 
 # =============================================================================
 # HELPERS
@@ -1278,21 +1271,14 @@ server <- function(input, output, session) {
   # ---------------------------------------------------------------------------
   # DuckDB connection
   # ---------------------------------------------------------------------------
-  con <- NULL
-  gbif_tab <- NULL
-  
-  if (exists("gbif_parquet")) {
-    con <- dbConnect(duckdb::duckdb(), dbdir = ":memory:")
-    try({
-      dbExecute(con, "INSTALL spatial; LOAD spatial;")
-      dbExecute(con, "INSTALL httpfs; LOAD httpfs;")
-      gbif_tab <- tbl(con, paste0("read_parquet('", gbif_parquet, "')"))
-    }, silent = TRUE)
-    
-    onStop(function() {
-      try(dbDisconnect(con, shutdown = TRUE), silent = TRUE)
-    })
-  }
+  con <- dbConnect(duckdb::duckdb(), dbdir = ":memory:")
+  dbExecute(con, "INSTALL spatial; LOAD spatial;")
+  dbExecute(con, "INSTALL httpfs; LOAD httpfs;")
+  gbif_tab <- tbl(con, glue("read_parquet('{gbif_parquet}')"))
+
+  onStop(function() {
+    try(dbDisconnect(con, shutdown = TRUE), silent = TRUE)
+  })
   
   chosen_point <- reactiveVal(NULL)
   
@@ -1936,9 +1922,15 @@ server <- function(input, output, session) {
         area_km2   <- round(as.numeric(st_area(st_transform(poly_i, 3857))) / 1e6, 2)
         t_score    <- if (area_km2 > 0) round(n_stops_in / area_km2, 2) else NA_real_
         
-        gbif_in <- safe_bect <- tryCatch(safe_vect_gbif_intersection(poly_i), error = function(e) NULL)
-        n_gbif_rec <- if (!is.null(gbif_in)) nrow(gbif_in) else 0
-        n_gbif_sp  <- if (!is.null(gbif_in) && "species" %in% names(gbif_in)) length(unique(gbif_in$species)) else 0
+        iso_wkt_t <- st_as_text(st_geometry(poly_i)[[1]])
+        gbif_t <- tryCatch({
+          gbif_tab |>
+            filter(sql(glue("ST_Intersects(ST_GeomFromText(geom_wkt), ST_GeomFromText('{iso_wkt_t}'))"))) |>
+            summarise(n_records = n(), n_species = n_distinct(species)) |>
+            collect()
+        }, error = function(e) NULL)
+        n_gbif_rec <- if (!is.null(gbif_t) && nrow(gbif_t) > 0) gbif_t$n_records[[1]] else 0L
+        n_gbif_sp  <- if (!is.null(gbif_t) && nrow(gbif_t) > 0) gbif_t$n_species[[1]] else 0L
         
         popup_html <- paste0(
           "<strong>Transit Isochrone — ", time_i, " min</strong>",
@@ -2030,7 +2022,8 @@ server <- function(input, output, session) {
         }
       }, silent = TRUE)
     }
-    
+
+
     withProgress(message = "Analyzing isochrones...", value = 0, {
 
     for (i in seq_len(n_isos)) {
@@ -2115,18 +2108,29 @@ server <- function(input, output, session) {
         ndvi_vals <- ndvi_vals[!is.na(ndvi_vals)]
         mean_ndvi <- ifelse(length(ndvi_vals) > 0, round(mean(ndvi_vals, na.rm = TRUE), 3), NA_real_)
       }
-      
-      inter_gbif <- safe_vect_gbif_intersection(poly_i)
-      
-      n_records <- if (!is.null(inter_gbif)) nrow(inter_gbif) else 0
-      n_species <- if (!is.null(inter_gbif) && "species" %in% names(inter_gbif) && nrow(inter_gbif) > 0) length(unique(inter_gbif$species)) else 0
-      n_birds   <- if (!is.null(inter_gbif) && nrow(inter_gbif) > 0 && all(c("species", "class") %in% names(inter_gbif))) length(unique(inter_gbif$species[inter_gbif$class == "Aves"])) else 0
-      n_mammals <- if (!is.null(inter_gbif) && nrow(inter_gbif) > 0 && all(c("species", "class") %in% names(inter_gbif))) length(unique(inter_gbif$species[inter_gbif$class == "Mammalia"])) else 0
-      n_plants  <- if (!is.null(inter_gbif) && nrow(inter_gbif) > 0 && all(c("species", "class") %in% names(inter_gbif))) {
-        length(unique(inter_gbif$species[inter_gbif$class %in%
-                                           c("Magnoliopsida", "Liliopsida", "Pinopsida", "Polypodiopsida",
-                                             "Equisetopsida", "Bryopsida", "Marchantiopsida")]))
-      } else 0
+
+      iso_wkt <- st_as_text(st_geometry(poly_i)[[1]])
+      gbif_summary <- tryCatch({
+        gbif_tab |>
+          filter(sql(glue("ST_Intersects(ST_GeomFromText(geom_wkt), ST_GeomFromText('{iso_wkt}'))"))) |>
+          summarise(
+            n_records = n(),
+            n_species = n_distinct(species),
+            n_birds   = n_distinct(case_when(class == "Aves"     ~ species, TRUE ~ NA_character_)),
+            n_mammals = n_distinct(case_when(class == "Mammalia" ~ species, TRUE ~ NA_character_)),
+            n_plants  = n_distinct(case_when(
+              class %in% c("Magnoliopsida", "Liliopsida", "Pinopsida", "Polypodiopsida",
+                           "Equisetopsida", "Bryopsida",  "Marchantiopsida") ~ species,
+              TRUE ~ NA_character_
+            ))
+          ) |>
+          collect()
+      }, error = function(e) NULL)
+      n_records <- if (!is.null(gbif_summary) && nrow(gbif_summary) > 0) gbif_summary$n_records[[1]] else 0L
+      n_species <- if (!is.null(gbif_summary) && nrow(gbif_summary) > 0) gbif_summary$n_species[[1]] else 0L
+      n_birds   <- if (!is.null(gbif_summary) && nrow(gbif_summary) > 0) gbif_summary$n_birds[[1]]   else 0L
+      n_mammals <- if (!is.null(gbif_summary) && nrow(gbif_summary) > 0) gbif_summary$n_mammals[[1]] else 0L
+      n_plants  <- if (!is.null(gbif_summary) && nrow(gbif_summary) > 0) gbif_summary$n_plants[[1]]  else 0L
       
       n_transit_stops <- NA_real_
       transit_access_score <- NA_real_
@@ -2244,11 +2248,14 @@ server <- function(input, output, session) {
 
     }) # end withProgress
 
-    iso_union <- st_union(iso_data)
-    inter_all_gbif <- safe_vect_gbif_intersection(st_as_sf(iso_union))
-    union_n_species <- if (!is.null(inter_all_gbif) && "species" %in% names(inter_all_gbif) && nrow(inter_all_gbif) > 0) {
-      length(unique(inter_all_gbif$species))
-    } else 0
+    union_wkt <- st_as_text(st_geometry(st_union(iso_data))[[1]])
+    union_n_species <- tryCatch({
+      gbif_tab |>
+        filter(sql(glue("ST_Intersects(ST_GeomFromText(geom_wkt), ST_GeomFromText('{union_wkt}'))"))) |>
+        summarise(n_species = n_distinct(species)) |>
+        collect() |>
+        pull(n_species)
+    }, error = function(e) 0L)
     
     attr(results, "bio_percentile") <- round(100 * ecdf(cbg_vect_sf$unique_species)(union_n_species), 1)
     

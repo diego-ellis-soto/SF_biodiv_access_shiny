@@ -42,11 +42,12 @@ hf_or_local <- function(filename) {
   dest
 }
 
+message("[setup_unified] loading greenspace polygons (cache / HuggingFace)…")
+
 # ============================================================================
 # Load Data: Greenspace (OSM polygons)
 # ============================================================================
-# Shapefiles require all four sidecar files — download each separately from HF
-# if the .shp is not yet cached.
+# Shapefile bundle on HuggingFace — download sidecars into cache if needed.
 greenspace_shp <- file.path(cache_dir, "greenspaces_osm_nad83.shp")
 if (!file.exists(greenspace_shp)) {
   for (ext in c("shp", "dbf", "prj", "shx")) {
@@ -55,6 +56,8 @@ if (!file.exists(greenspace_shp)) {
 }
 osm_greenspace <- st_read(greenspace_shp, quiet = TRUE) |> st_transform(4326)
 if (!"name" %in% names(osm_greenspace)) osm_greenspace$name <- "Unnamed Greenspace"
+
+message("[setup_unified] loading greenspace distance rasters + NDVI…")
 
 # ============================================================================
 # Load Data: Greenspace distance rasters
@@ -67,11 +70,12 @@ greenspace_osmid_raster <- terra::rast(hf_or_local("nearest_greenspace_osmid.tif
 # ============================================================================
 ndvi <- terra::rast(hf_or_local("SF_EastBay_NDVI_Sentinel_10.tif"))
 
+message("[setup_unified] loading GBIF parquet + CBG polygons…")
+
 # ============================================================================
 # Load Data: GBIF observations (parquet, queried via DuckDB in server)
 # ============================================================================
-sf_gbif <- arrow::read_parquet(hf_or_local("gbif_census_ndvi_anno.parquet")) |>
-  st_as_sf(wkt = "geom_wkt", crs = 4326)
+gbif_parquet <- hf_or_local("gbif_census_ndvi_anno.parquet")
 
 # ============================================================================
 # Load Data: Census block groups (CBG)
@@ -83,24 +87,28 @@ if (!"n_observations" %in% names(cbg_vect_sf)) cbg_vect_sf$n_observations <- cbg
 if (!"median_inc"     %in% names(cbg_vect_sf)) cbg_vect_sf$median_inc     <- cbg_vect_sf$medincE
 if (!"ndvi_mean"      %in% names(cbg_vect_sf)) cbg_vect_sf$ndvi_mean      <- cbg_vect_sf$ndvi_sentinel
 
+message("[setup_unified] computing CBG × greenspace overlap (vector intersect)…")
+
 # ============================================================================
-# Load Data: Per-CBG greenspace coverage (prep: data/output → HuggingFace CSV)
+# Per-CBG greenspace overlap (computed here; no separate CSV on HuggingFace)
 # ============================================================================
-cbg_gs_csv <- hf_or_local("cbg_greenspace_coverage.csv")
-cbg_gs_rds <- hf_or_local("cbg_greenspace_coverage.rds")
-cbg_greenspace_coverage <- if (file.exists(cbg_gs_csv)) {
-  readr::read_csv(cbg_gs_csv, show_col_types = FALSE) |>
-    mutate(GEOID = as.character(GEOID))
-} else if (file.exists(cbg_gs_rds)) {
-  readRDS(cbg_gs_rds) |>
-    mutate(GEOID = as.character(GEOID))
-} else {
-  warning(
-    "cbg_greenspace_coverage not found in data/cached/ or on HuggingFace ",
-    "(expected cbg_greenspace_coverage.csv). Run Rscripts/prep/build_cbg_greenspace_coverage.R."
+cbg_proj <- st_transform(cbg_vect_sf[, "GEOID"], 3857) |>
+  mutate(cbg_area_m2 = as.numeric(st_area(geometry)))
+gs_proj <- st_transform(osm_greenspace, 3857) |> st_make_valid()
+gs_union <- st_union(gs_proj)
+cbg_gs_inter <- st_intersection(cbg_proj, gs_union)
+cbg_greenspace_coverage <- cbg_gs_inter |>
+  mutate(greenspace_m2 = as.numeric(st_area(geometry))) |>
+  st_drop_geometry() |>
+  group_by(GEOID) |>
+  summarise(greenspace_m2 = sum(greenspace_m2), .groups = "drop") |>
+  right_join(cbg_proj |> st_drop_geometry() |> dplyr::select(GEOID, cbg_area_m2), by = "GEOID") |>
+  mutate(
+    greenspace_m2 = tidyr::replace_na(greenspace_m2, 0),
+    GEOID = as.character(GEOID)
   )
-  NULL
-}
+
+message("[setup_unified] loading biodiversity hotspots / coldspots…")
 
 # ============================================================================
 # Load Data: Biodiversity hotspots / coldspots
@@ -116,6 +124,8 @@ if (!file.exists(coldspots_shp)) {
   for (ext in c("shp", "dbf", "prj", "shx")) hf_or_local(glue::glue("coldspots.{ext}"))
 }
 biodiv_coldspots <- st_read(coldspots_shp, quiet = TRUE) |> st_transform(4326)
+
+message("[setup_unified] loading RSF, CalEnviroScreen, SF EJ layers…")
 
 # ============================================================================
 # Load Data: RSF Program Projects
@@ -154,6 +164,8 @@ sf_ej_sf <- tryCatch({
 }, error = function(e) {
   warning("SF EJ layer failed to load: ", e$message); NULL
 })
+
+message("[setup_unified] loading GTFS (zip, stops, shapes, timetable, headways)…")
 
 # ============================================================================
 # Load Data: GTFS (SF Muni)
@@ -255,3 +267,5 @@ if (!is.null(gtfs_stop_headways) && !is.null(gtfs_stops_sf)) {
     mutate(stop_id = as.character(stop_id)) |>
     left_join(gtfs_stop_headways, by = "stop_id")
 }
+
+message("[setup_unified] data load complete.")
