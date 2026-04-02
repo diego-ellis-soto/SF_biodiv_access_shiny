@@ -9,12 +9,11 @@
 #
 # Or upload files from data/output/ directly via the web UI.
 #
-# Dataset files that prep does NOT rebuild (already on HF unless you replace):
-#   greenspaces_osm_nad83.{shp,dbf,prj,shx}
-#   SF_EastBay_NDVI_Sentinel_10.tif
-#   cbg_vect_sf.Rdata
-#   hotspots.{shp,dbf,prj,shx}
-#   coldspots.{shp,dbf,prj,shx}
+# Already on HuggingFace (not staged from data/output): greenspaces_osm_nad83.{shp,...}
+# Other manual assets: SF_EastBay_NDVI_Sentinel_10.tif, cbg_vect_sf.Rdata, hotspots/coldspots
+#
+# GTFS: sf_muni_gtfs.zip contains the feed; timetable .rds + headways .csv are
+# precomputed (~20–30 s) so the app does not rebuild them every session.
 # ============================================================================
 
 library(glue)
@@ -27,7 +26,6 @@ artifacts <- c(
   "nearest_greenspace_dist.tif",
   "nearest_greenspace_osmid.tif",
   "gbif_census_ndvi_anno.parquet",
-  "cbg_greenspace_coverage.csv",
   "gtfs_timetable_monday.rds",
   "gtfs_stop_headways.csv",
   "sf_muni_gtfs.zip",

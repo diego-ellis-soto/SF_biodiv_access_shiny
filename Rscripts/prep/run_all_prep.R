@@ -5,16 +5,14 @@
 #
 # Order (fast steps first; heavy raster build last):
 #   1. GBIF DuckDB → sf-gbif.parquet → gbif_census_ndvi_anno.parquet
-#   2. CBG × greenspace coverage CSV
-#   3. CalEnviroScreen + SF EJ → GeoPackages
-#   4. GTFS zip + timetable + stop headways
-#   5. Greenspace distance rasters (DuckDB; slow)
+#   2. CalEnviroScreen + SF EJ → GeoPackages
+#   3. GTFS zip + timetable + stop headways (~20–30 s; cached for app startup)
+#   4. Greenspace distance rasters (DuckDB; slow)
 #
 # Then upload files from data/output/ to the HuggingFace dataset (manually or
 # see comments in upload_to_huggingface.R).
 
 source("Rscripts/prep/create_annotated_gbif_parquet.R")
-source("Rscripts/prep/build_cbg_greenspace_coverage.R")
 source("Rscripts/prep/build_equity_layers.R")
 source("Rscripts/prep/implement_optimizations.R")
 source("Rscripts/prep/making-greenspace-raster.R")
