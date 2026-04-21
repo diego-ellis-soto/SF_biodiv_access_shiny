@@ -25,9 +25,9 @@ tcon |> dbExecute("
   SET threads TO 8;
 ")
 
-st_crs(st_read("data/cached/greenspaces_osm_nad83.shp"))$epsg
-# Read greenspace data
-greenspaces <- st_read("data/cached/greenspaces_osm_nad83.shp") %>%
+greenspace_shp <- "data/source/Greenspaces_osm_nad93/greenspaces_osm_nad83.shp"
+
+greenspaces <- st_read(greenspace_shp, quiet = TRUE) |>
   st_transform(3310)
 
 # --- --- --- --- --- ---
@@ -89,18 +89,17 @@ template_pts %>%
   write_sf("data/intermediate/template_pts.gpkg")
 
 # Load data into DuckDB and set up geometries
-tcon %>% dbExecute("
+tcon %>% dbExecute(glue("
 CREATE OR REPLACE TABLE greenspace_geo
 AS
 SELECT * EXCLUDE geom,
   ST_TRANSFORM(geom, 'EPSG:4269', 'EPSG:3310', always_xy := true) AS geom3310,
   ST_Centroid(geom) AS centroid_geom3310,
   ST_SimplifyPreserveTopology(ST_TRANSFORM(geom, 'EPSG:4269', 'EPSG:3310', always_xy := true), 10) AS simple_geom3310
-FROM ST_READ('data/cached/greenspaces_osm_nad83.shp');
+FROM ST_READ('{greenspace_shp}');
 
 CREATE INDEX idx_grn_simple_geom ON greenspace_geo USING RTREE (simple_geom3310);
-CREATE INDEX idx_grn_centroid_geom ON greenspace_geo USING RTREE (centroid_geom3310);
-")
+"))
 
 # Load template grid into DuckDB
 tcon %>% dbExecute("

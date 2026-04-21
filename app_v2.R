@@ -12,7 +12,7 @@
 # Run the backgroun calculation for each isochrone
 # WHAT to do about EJ layers in presidio and golden gate park, etc
 
-q
+
 # =============================================================================
 # PACKAGES
 # =============================================================================
@@ -47,12 +47,12 @@ library(scales)
 # Set this to your project folder if needed
 # setwd('/Users/diegoellis/Desktop/Projects/Postdoc/OLD_SF_BIODIV_ACCESS/SF_biodiv_access/backup-shiny/')
 
-# Use setup_local.R for local development (local files + caching).
-# Switch to setup.R for HuggingFace / cloud deployment (remote URLs).
-source("R/setup_local.R")
+# setup_unified.R checks local files first, falls back to HuggingFace downloads.
+source("Rscripts/setup_unified.R")
 
 # setup_local.R loads: cbg_vect_sf, ndvi, osm_greenspace, biodiv_hotspots,
 # biodiv_coldspots, greenspace_dist_raster, greenspace_osmid_raster,
+# rsfprogram_dist_raster, rsfprogram_id_raster,
 # gbif_parquet (local parquet path), rsf_projects,
 # gtfs_stops_sf, gtfs_routes_sf, gtfs_router,
 # cenv_sf, sf_ej_sf
@@ -66,185 +66,39 @@ theme <- bs_theme(
   bootswatch   = "minty",
   base_font    = font_google("Roboto"),
   heading_font = font_google("Roboto Slab"),
-  bg           = "#f0fff0",
-  fg           = "#2e8b57"
+  bg           = "#f3f8f5",
+  fg           = "#3d5c4a"
 )
 
 # =============================================================================
-# OPTIONAL ENVIRONMENT / EQUITY LAYERS
+# OPTIONAL ENVIRONMENT / EQUITY LAYERS + GTFS
 # =============================================================================
-calenviro_path <- '/Users/diegoellis/Downloads/calenviroscreen40gdb_F_2021.gdb'
-if (!file.exists(calenviro_path)) {
-  calenviro_path <- '/Users/diegoellis/Desktop/Projects/Presentations/Data_Schell_Lab_Tutorial/calenviroscreen40gdb_F_2021.gdb'
-}
-
-cenv_sf <- tryCatch({
-  if (!file.exists(calenviro_path)) stop("CalEnviroScreen file not found")
-  message("Loading CalEnviroScreen...")
-  sf::st_read(calenviro_path, quiet = TRUE) |>
-    dplyr::filter(grepl("san francisco", County, ignore.case = TRUE), !is.na(CIscore)) |>
-    dplyr::select(
-      Tract, CIscore, CIscoreP,
-      PM2_5, PM2_5_Pctl, Traffic, Traffic_Pctl,
-      Poverty, Poverty_Pctl, HousBurd, HousBurd_Pctl,
-      County
-    ) |>
-    sf::st_transform(4326) |>
-    sf::st_make_valid()
-}, error = function(e) {
-  warning("CalEnviroScreen not loaded: ", e$message)
-  NULL
-})
-
-sf_ej_path <- '/Users/diegoellis/Downloads/San Francisco Environmental Justice Communities Map_20251217/geo_export_a21b0a0a-7306-46fd-8381-06581cdbe6e9.shp'
-
-sf_ej_sf <- tryCatch({
-  if (!file.exists(sf_ej_path)) stop("SF EJ shapefile not found")
-  message("Loading SF EJ Communities layer...")
-  sf::st_read(sf_ej_path, quiet = TRUE) |>
-    dplyr::mutate(
-      symbol_hex = stringr::str_split(symbol_rgb, ",\\s*") |>
-        lapply(function(x) {
-          sprintf("#%02X%02X%02X", as.integer(x[1]), as.integer(x[2]), as.integer(x[3]))
-        }) |>
-        unlist(),
-      ej_label = dplyr::case_when(
-        is.na(score) ~ "Not EJ",
-        score >= 21  ~ "High EJ burden (21–30)",
-        score >= 11  ~ "Moderate EJ burden (11–20)",
-        score >= 1   ~ "Low EJ burden (1–10)",
-        score == 0   ~ "Score 0",
-        TRUE         ~ "Unknown"
-      )
-    ) |>
-    sf::st_transform(4326) |>
-    sf::st_make_valid()
-}, error = function(e) {
-  warning("SF EJ layer not loaded: ", e$message)
-  NULL
-})
-
-# =============================================================================
-# GTFS / MUNI
-# =============================================================================
-gtfs_router <- NULL
-gtfs_stops_sf <- NULL
-gtfs_routes_sf <- NULL
-transit_iso_cache <- NULL
-gtfs_stop_headways <- NULL
-gtfs_zip_path <- NULL
-
-# Edit this if needed
-gtfs_path <- '/Users/diegoellis/Desktop/RSF_next_steps/GPFS_OSM_Transit/sf_muni_gtfs-current/'
-
-if (dir.exists(gtfs_path)) {
-  try({
-    gtfs_stops_sf <- read.csv(file.path(gtfs_path, 'stops.txt')) |>
-      st_as_sf(coords = c("stop_lon", "stop_lat"), crs = 4326) |>
-      mutate(stop_id = as.character(stop_id))
-    
-    message("Building GTFS route shapes — may take a few seconds...")
-    gtfs_shapes_raw <- read.csv(file.path(gtfs_path, 'shapes.txt'))
-    gtfs_trips_raw  <- read.csv(file.path(gtfs_path, 'trips.txt'))
-    gtfs_routes_raw <- read.csv(file.path(gtfs_path, 'routes.txt'))
-    
-    shape_route_map <- gtfs_trips_raw |>
-      distinct(shape_id, route_id)
-    
-    route_meta <- gtfs_routes_raw |>
-      select(route_id, route_short_name, route_long_name, route_color) |>
-      mutate(route_color_hex = paste0("#", trimws(route_color)))
-    
-    shapes_split <- gtfs_shapes_raw |>
-      arrange(shape_id, shape_pt_sequence) |>
-      group_by(shape_id) |>
-      group_split()
-    
-    shape_geoms <- lapply(shapes_split, function(s) {
-      st_linestring(cbind(s$shape_pt_lon, s$shape_pt_lat))
-    })
-    
-    gtfs_routes_sf <- st_sf(
-      shape_id  = sapply(shapes_split, function(s) s$shape_id[1]),
-      geometry  = st_sfc(shape_geoms, crs = 4326)
-    ) |>
-      left_join(shape_route_map, by = "shape_id") |>
-      left_join(route_meta, by = "route_id")
-    
-    message("GTFS route shapes ready: ", nrow(gtfs_routes_sf), " shapes / ",
-            n_distinct(gtfs_routes_sf$route_id), " routes")
-    
-    gtfs_zip_path <- tempfile(fileext = ".zip")
-    old_wd <- getwd()
-    setwd(gtfs_path)
-    utils::zip(gtfs_zip_path, files = list.files('.', pattern = "\\.txt$"))
-    setwd(old_wd)
-    
-    gtfs_router <- tryCatch({
-      gr <- gtfsrouter::extract_gtfs(gtfs_zip_path)
-      gtfsrouter::gtfs_timetable(gr, day = "Monday")
-    }, error = function(e) {
-      warning("gtfsrouter failed to initialise: ", e$message)
-      NULL
-    })
-    
-    transit_cache_path <- "data/transit_iso_cache.rds"
-    transit_iso_cache <- tryCatch({
-      if (file.exists(transit_cache_path)) readRDS(transit_cache_path) else NULL
-    }, error = function(e) NULL)
-    
-    gtfs_stop_headways <- tryCatch({
-      message("Computing stop service frequencies (AM peak 7–9am)...")
-      gt <- tidytransit::read_gtfs(gtfs_zip_path)
-      tidytransit::get_stop_frequency(gt, start_time = 7 * 3600, end_time = 9 * 3600) |>
-        group_by(stop_id) |>
-        summarise(
-          mean_headway_min  = mean(mean_headway, na.rm = TRUE) / 60,
-          n_departures_peak = sum(n_departures, na.rm = TRUE),
-          .groups = "drop"
-        ) |>
-        mutate(stop_id = as.character(stop_id))
-    }, error = function(e) {
-      warning("tidytransit headway computation failed: ", e$message)
-      NULL
-    })
-    
-    if (!is.null(gtfs_stops_sf) && !is.null(gtfs_stop_headways)) {
-      gtfs_stops_sf <- gtfs_stops_sf |>
-        left_join(gtfs_stop_headways, by = "stop_id")
-    }
-  }, silent = TRUE)
-}
+# cenv_sf, sf_ej_sf, gtfs_stops_sf, gtfs_routes_sf, gtfs_router,
+# gtfs_zip_path, gtfs_stop_headways, transit_iso_cache are all loaded
+# by setup_local.R (sourced above).
 
 # =============================================================================
 # GBIF UI VALUES FROM PARQUET
 # =============================================================================
-gbif_classes <- character(0)
-gbif_families <- character(0)
+con_temp <- dbConnect(duckdb::duckdb(), dbdir = ":memory:")
+dbExecute(con_temp, "INSTALL spatial; LOAD spatial;")
+dbExecute(con_temp, "INSTALL httpfs; LOAD httpfs;")
+gbif_tab_temp <- tbl(con_temp, glue("read_parquet('{gbif_parquet}')"))
 
-if (exists("gbif_parquet")) {
-  con_temp <- dbConnect(duckdb::duckdb(), dbdir = ":memory:")
-  try({
-    dbExecute(con_temp, "INSTALL spatial; LOAD spatial;")
-    dbExecute(con_temp, "INSTALL httpfs; LOAD httpfs;")
-    gbif_tab_temp <- tbl(con_temp, paste0("read_parquet('", gbif_parquet, "')"))
-    
-    gbif_classes <- gbif_tab_temp |>
-      distinct(class) |>
-      collect() |>
-      pull(class) |>
-      unique() |>
-      sort()
-    
-    gbif_families <- gbif_tab_temp |>
-      distinct(family) |>
-      collect() |>
-      pull(family) |>
-      unique() |>
-      sort()
-  }, silent = TRUE)
-  try(dbDisconnect(con_temp, shutdown = TRUE), silent = TRUE)
-}
+gbif_classes <- gbif_tab_temp |>
+  distinct(class) |>
+  collect() |>
+  pull(class) |>
+  sort()
+
+gbif_families <- gbif_tab_temp |>
+  distinct(family) |>
+  collect() |>
+  pull(family) |>
+  sort()
+
+dbDisconnect(con_temp, shutdown = TRUE)
+rm(con_temp, gbif_tab_temp)
 
 # =============================================================================
 # HELPERS
@@ -311,6 +165,7 @@ choose_existing_sf_object <- function(candidates) {
 
 safe_vect_gbif_intersection <- function(poly_i) {
   out <- tryCatch({
+    # browser()
     if (exists("vect_gbif")) {
       st_as_sf(intersect(vect_gbif, vect(poly_i)))
     } else if (exists("sf_gbif")) {
@@ -670,6 +525,7 @@ ui <- dashboardPage(
   ),
   
   dashboardBody(
+    tags$head(tags$link(rel = "stylesheet", type = "text/css", href = "app_pastel.css")),
     theme = theme,
     useShinyjs(),
     div(id = "loading", style = "display:none; font-size:20px; color:red;", "Calculating..."),
@@ -679,7 +535,7 @@ ui <- dashboardPage(
         tabName = "isochrone",
         fluidRow(
           box(
-            title = "Controls", status = "success", solidHeader = TRUE, width = 4,
+            title = "Controls", status = "success", solidHeader = TRUE, width = 3,
             
             radioButtons(
               "location_choice",
@@ -752,16 +608,20 @@ ui <- dashboardPage(
           ),
           
           box(
-            title = "Map", status = "success", solidHeader = TRUE, width = 8,
+            title = "Map", status = "success", solidHeader = TRUE, width = 9,
             leafletOutput("isoMap", height = 600)
           )
         ),
         
         fluidRow(
-          box(title = "Biodiversity Access Score", status = "success", solidHeader = TRUE, width = 3, uiOutput("bioScoreBox")),
-          box(title = "Transit Access Score", status = "primary", solidHeader = TRUE, width = 3, uiOutput("transitScoreBox")),
-          box(title = "Biodiversity Access Index", status = "warning", solidHeader = TRUE, width = 3, uiOutput("biodiversityAccessIndexBox")),
-          box(title = "Closest Greenspace", status = "success", solidHeader = TRUE, width = 3, uiOutput("closestGreenspaceUI"))
+          box(title = "Biodiversity Access Score", status = "success", solidHeader = TRUE, width = 4, uiOutput("bioScoreBox")),
+          box(title = "Transit Access Score", status = "primary", solidHeader = TRUE, width = 4, uiOutput("transitScoreBox")),
+          box(title = "Biodiversity Access Index", status = "warning", solidHeader = TRUE, width = 4, uiOutput("biodiversityAccessIndexBox"))
+        ),
+        
+        fluidRow(
+          box(title = "Closest Greenspace", status = "success", solidHeader = TRUE, width = 6, uiOutput("closestGreenspaceUI")),
+          box(title = "Closest RSF Program", status = "success", solidHeader = TRUE, width = 6, uiOutput("closestRSFProgramUI"))
         ),
         
         fluidRow(
@@ -926,8 +786,8 @@ ui <- dashboardPage(
                   style = "padding-left: 18px; margin-top: 6px;",
                   tags$li("Diego Ellis Soto"),
                   tags$li("Avery Hill"),
-                  tags$li("Lizzie Edson"),
-                  tags$li("Albaro Cassanova"),
+                  tags$li("Lizzy Edson"),
+                  tags$li("Álvaro Casanova"),
                   tags$li("Christopher J. Schell"),
                   tags$li("Carl Boettiger"),
                   tags$li("Rebecca Johnson")
@@ -1096,7 +956,7 @@ ui <- dashboardPage(
             status = "primary", solidHeader = TRUE, width = 12,
             p(
               style = "font-size: 13px; color: #555;",
-              "All layers are toggled in the map's layer-control panel (top-right). Base maps can be switched between Street, Satellite, and CartoDB Positron."
+              "All layers are toggled in the map's layer-control panel (top-right). The default base map is CartoDB Positron; you can switch to Street or Satellite."
             ),
             tags$table(
               class = "table table-hover table-sm",
@@ -1118,6 +978,9 @@ ui <- dashboardPage(
                   tags$td("Derived from OSM")),
                 tags$tr(tags$td(icon("map"), " RSF Program Projects"),
                   tags$td("Partner project polygons from the Reimagining SF Initiative"),
+                  tags$td("RSF Initiative")),
+                tags$tr(tags$td(icon("ruler"), " RSF Program Distance"),
+                  tags$td("Raster showing distance (m) to the nearest RSF program polygon"),
                   tags$td("RSF Initiative")),
                 tags$tr(tags$td(icon("fire"), " Hotspots (KnowBR)"),
                   tags$td("Block groups with anomalously high species richness relative to sampling effort"),
@@ -1417,21 +1280,14 @@ server <- function(input, output, session) {
   # ---------------------------------------------------------------------------
   # DuckDB connection
   # ---------------------------------------------------------------------------
-  con <- NULL
-  gbif_tab <- NULL
-  
-  if (exists("gbif_parquet")) {
-    con <- dbConnect(duckdb::duckdb(), dbdir = ":memory:")
-    try({
-      dbExecute(con, "INSTALL spatial; LOAD spatial;")
-      dbExecute(con, "INSTALL httpfs; LOAD httpfs;")
-      gbif_tab <- tbl(con, paste0("read_parquet('", gbif_parquet, "')"))
-    }, silent = TRUE)
-    
-    onStop(function() {
-      try(dbDisconnect(con, shutdown = TRUE), silent = TRUE)
-    })
-  }
+  con <- dbConnect(duckdb::duckdb(), dbdir = ":memory:")
+  dbExecute(con, "INSTALL spatial; LOAD spatial;")
+  dbExecute(con, "INSTALL httpfs; LOAD httpfs;")
+  gbif_tab <- tbl(con, glue("read_parquet('{gbif_parquet}')"))
+
+  onStop(function() {
+    try(dbDisconnect(con, shutdown = TRUE), silent = TRUE)
+  })
   
   chosen_point <- reactiveVal(NULL)
   
@@ -1439,7 +1295,7 @@ server <- function(input, output, session) {
   # Benchmarks for BAI
   # ---------------------------------------------------------------------------
   city_benchmarks <- local({
-    bench_cache <- "data/cache/city_benchmarks.rds"
+    bench_cache <- file.path(cache_dir, "city_benchmarks.rds")
     if (file.exists(bench_cache)) {
       message("Loading city_benchmarks from cache...")
       return(readRDS(bench_cache))
@@ -1561,7 +1417,7 @@ server <- function(input, output, session) {
       greenspace_cover = greenspace_cover_bench[is.finite(greenspace_cover_bench)]
     )
 
-    if (!dir.exists("data/cache")) dir.create("data/cache", recursive = TRUE)
+    if (!dir.exists(cache_dir)) dir.create(cache_dir, recursive = TRUE)
     saveRDS(bench, bench_cache)
     message("City benchmarks saved to cache.")
     bench
@@ -1591,9 +1447,9 @@ server <- function(input, output, session) {
     coldspot_sf <- safe_biodiv_coldspots()
     
     m <- leaflet() |>
+      addProviderTiles(providers$CartoDB.Positron, group = "CartoDB.Positron") |>
       addTiles(group = "Street Map (Default)") |>
       addProviderTiles(providers$Esri.WorldImagery, group = "Satellite (ESRI)") |>
-      addProviderTiles(providers$CartoDB.Positron, group = "CartoDB.Positron") |>
       addPolygons(
         data = cbg_vect_sf, group = "Income",
         fillColor = ~pal_cbg(medincE), fillOpacity = 0.6,
@@ -1689,6 +1545,38 @@ server <- function(input, output, session) {
             values = c(0, upper_limit),
             title = "Distance to<br>Greenspace (m)",
             group = "Greenspace Distance"
+          )
+      }
+    }
+    
+    if (exists("rsfprogram_dist_raster")) {
+      rsf_vals_clean <- values(rsfprogram_dist_raster) |>
+        as.vector() |>
+        (\(x) x[is.finite(x)])()
+      
+      if (length(rsf_vals_clean) > 0) {
+        upper_rsf <- quantile(rsf_vals_clean, 0.998, na.rm = TRUE)
+        
+        pal_rsf_dist <- colorNumeric(
+          palette = rev(brewer.pal(9, "Purples")),
+          domain = c(0, upper_rsf),
+          na.color = "transparent"
+        )
+        
+        m <- m |>
+          addRasterImage(
+            x = rsfprogram_dist_raster,
+            colors = pal_rsf_dist,
+            opacity = 0.65,
+            project = TRUE,
+            group = "RSF Program Distance"
+          ) |>
+          addLegend(
+            position = "bottomright",
+            pal = pal_rsf_dist,
+            values = c(0, upper_rsf),
+            title = "Distance to<br>RSF program (m)",
+            group = "RSF Program Distance"
           )
       }
     }
@@ -1795,9 +1683,9 @@ server <- function(input, output, session) {
     m |>
       setView(lng = -122.4194, lat = 37.7749, zoom = 12) |>
       addLayersControl(
-        baseGroups = c("Street Map (Default)", "Satellite (ESRI)", "CartoDB.Positron"),
+        baseGroups = c("CartoDB.Positron", "Street Map (Default)", "Satellite (ESRI)"),
         overlayGroups = c(
-          "Income", "Greenspace", "Greenspace Distance", "RSF Program Projects",
+          "Income", "Greenspace", "Greenspace Distance", "RSF Program Distance", "RSF Program Projects",
           "Hotspots (KnowBR)", "Coldspots (KnowBR)",
           "Species Richness", "Data Availability",
           "CalEnviroScreen (CI Score)", "SF EJ Communities",
@@ -1809,6 +1697,7 @@ server <- function(input, output, session) {
       hideGroup("Income") |>
       hideGroup("Greenspace") |>
       hideGroup("Greenspace Distance") |>
+      hideGroup("RSF Program Distance") |>
       hideGroup("RSF Program Projects") |>
       hideGroup("Hotspots (KnowBR)") |>
       hideGroup("Coldspots (KnowBR)") |>
@@ -1857,7 +1746,9 @@ server <- function(input, output, session) {
   
   observeEvent(input$clear_map, {
     chosen_point(NULL)
+    iso_store$data <- NULL
     leafletProxy("isoMap") |>
+      removeControl("ndvi_legend") |>
       clearGroup("selected_point") |>
       clearGroup("Isochrones") |>
       clearGroup("Transit Isochrones") |>
@@ -1867,56 +1758,63 @@ server <- function(input, output, session) {
   # ---------------------------------------------------------------------------
   # Isochrone generation
   # ---------------------------------------------------------------------------
-  isochrones_data <- eventReactive(input$generate_iso, {
+  # iso_store holds the computed sf; only written inside observeEvent(input$generate_iso).
+  # Nothing can write to it except the button press, so map clicks cannot trigger
+  # Mapbox calls regardless of what other reactives read isochrones_data().
+  iso_store       <- reactiveValues(data = NULL)
+  isochrones_data <- reactive({ iso_store$data })
+
+  observeEvent(input$generate_iso, {
+    pt <- chosen_point()
+    if (is.null(pt)) return()
+    if (length(input$transport_modes) == 0) return()
+    if (length(input$iso_times) == 0) return()
+
     leafletProxy("isoMap") |>
+      removeControl("ndvi_legend") |>
       clearGroup("Isochrones") |>
       clearGroup("Transit Isochrones") |>
       clearGroup("NDVI Raster")
-    
-    pt <- chosen_point()
-    if (is.null(pt)) return(NULL)
-    if (length(input$transport_modes) == 0) return(NULL)
-    if (length(input$iso_times) == 0) return(NULL)
-    
+
     location_sf <- st_as_sf(
       data.frame(lon = pt["lon"], lat = pt["lat"]),
       coords = c("lon", "lat"),
       crs = 4326
     )
-    
+
     iso_list <- list()
-    
+
     mapbox_modes <- intersect(input$transport_modes, c("driving", "walking", "cycling", "driving-traffic"))
-    
+
     for (mode in mapbox_modes) {
       for (t in as.numeric(input$iso_times)) {
         iso <- tryCatch(
           mb_isochrone(location_sf, time = t, profile = mode, access_token = mapbox_token),
           error = function(e) NULL
         )
-        
+
         if (!is.null(iso)) {
           iso_std <- standardize_iso_sf(iso, mode_name = mode, time_min = t)
           if (!is.null(iso_std)) iso_list <- append(iso_list, list(iso_std))
         }
       }
     }
-    
+
     if ("transit" %in% input$transport_modes && !is.null(gtfs_router) && !is.null(gtfs_stops_sf)) {
       stop_dists <- st_distance(location_sf, gtfs_stops_sf)
       nearest_idx <- which.min(stop_dists)
       nearest_id <- as.character(gtfs_stops_sf$stop_id[nearest_idx])
       dep_secs <- as.numeric(input$transit_hour) * 3600
-      
+
       for (t in as.numeric(input$iso_times)) {
         iso_poly <- NULL
-        
+
         if (!is.null(transit_iso_cache) &&
             !is.null(transit_iso_cache[[nearest_id]]) &&
             !is.null(transit_iso_cache[[nearest_id]][[as.character(t)]])) {
           iso_poly <- transit_iso_cache[[nearest_id]][[as.character(t)]]
         }
-        
+
         if (is.null(iso_poly)) {
           iso_result <- tryCatch(
             gtfsrouter::gtfs_isochrone(
@@ -1928,11 +1826,11 @@ server <- function(input, output, session) {
             ),
             error = function(e) NULL
           )
-          
+
           if (!is.null(iso_result) && nrow(iso_result) > 2) {
             reachable_sf <- gtfs_stops_sf |>
               filter(stop_id %in% as.character(iso_result$stop_id))
-            
+
             if (nrow(reachable_sf) > 2) {
               iso_poly <- st_convex_hull(st_union(reachable_sf))
             } else if (nrow(reachable_sf) > 0) {
@@ -1941,7 +1839,7 @@ server <- function(input, output, session) {
             }
           }
         }
-        
+
         if (!is.null(iso_poly)) {
           iso_sf <- st_sf(
             mode = "transit",
@@ -1954,14 +1852,14 @@ server <- function(input, output, session) {
         }
       }
     }
-    
+
     if ("walk_transit" %in% input$transport_modes && !is.null(gtfs_router) && !is.null(gtfs_stops_sf)) {
       dep_secs <- as.numeric(input$transit_hour) * 3600
-      
+
       valid_times <- as.numeric(input$iso_times)[
         as.numeric(input$iso_times) > input$walk_to_stop_min
       ]
-      
+
       for (t in valid_times) {
         wt_iso <- tryCatch(
           build_walk_transit_isochrone(
@@ -1980,16 +1878,19 @@ server <- function(input, output, session) {
           ),
           error = function(e) NULL
         )
-        
+
         if (!is.null(wt_iso) && nrow(wt_iso) > 0) {
           iso_list <- append(iso_list, list(wt_iso))
         }
       }
     }
-    
-    if (length(iso_list) == 0) return(NULL)
-    
-    dplyr::bind_rows(iso_list) |>
+
+    if (length(iso_list) == 0) {
+      iso_store$data <- NULL
+      return()
+    }
+
+    iso_store$data <- dplyr::bind_rows(iso_list) |>
       st_as_sf() |>
       st_make_valid() |>
       st_transform(4326)
@@ -2003,6 +1904,7 @@ server <- function(input, output, session) {
     req(iso_data)
     
     leafletProxy("isoMap") |>
+      removeControl("ndvi_legend") |>
       clearGroup("Isochrones") |>
       clearGroup("Transit Isochrones") |>
       clearGroup("NDVI Raster")
@@ -2062,9 +1964,15 @@ server <- function(input, output, session) {
         area_km2   <- round(as.numeric(st_area(st_transform(poly_i, 3857))) / 1e6, 2)
         t_score    <- if (area_km2 > 0) round(n_stops_in / area_km2, 2) else NA_real_
         
-        gbif_in <- safe_bect <- tryCatch(safe_vect_gbif_intersection(poly_i), error = function(e) NULL)
-        n_gbif_rec <- if (!is.null(gbif_in)) nrow(gbif_in) else 0
-        n_gbif_sp  <- if (!is.null(gbif_in) && "species" %in% names(gbif_in)) length(unique(gbif_in$species)) else 0
+        iso_wkt_t <- st_as_text(st_geometry(poly_i)[[1]])
+        gbif_t <- tryCatch({
+          gbif_tab |>
+            filter(sql(glue("ST_Intersects(ST_GeomFromText(geom_wkt), ST_GeomFromText('{iso_wkt_t}'))"))) |>
+            summarise(n_records = n(), n_species = n_distinct(species)) |>
+            collect()
+        }, error = function(e) NULL)
+        n_gbif_rec <- if (!is.null(gbif_t) && nrow(gbif_t) > 0) gbif_t$n_records[[1]] else 0L
+        n_gbif_sp  <- if (!is.null(gbif_t) && nrow(gbif_t) > 0) gbif_t$n_species[[1]] else 0L
         
         popup_html <- paste0(
           "<strong>Transit Isochrone — ", time_i, " min</strong>",
@@ -2102,7 +2010,10 @@ server <- function(input, output, session) {
         ndvi_pal <- colorNumeric("YlGn", domain = range(ndvi_vals, na.rm = TRUE), na.color = "transparent")
         leafletProxy("isoMap") |>
           addRasterImage(x = ndvi_mask, colors = ndvi_pal, opacity = 0.7, project = TRUE, group = "NDVI Raster") |>
-          addLegend(position = "bottomright", pal = ndvi_pal, values = ndvi_vals, title = "NDVI")
+          addLegend(
+            position = "bottomright", pal = ndvi_pal, values = ndvi_vals, title = "NDVI",
+            layerId = "ndvi_legend"
+          )
       }
     }
   })
@@ -2127,7 +2038,7 @@ server <- function(input, output, session) {
     n_isos <- nrow(iso_data)
 
     user_point_sf <- NULL
-    pt <- chosen_point()
+    pt <- isolate(chosen_point())
     if (!is.null(pt)) {
       user_point_sf <- st_as_sf(
         data.frame(lon = pt["lon"], lat = pt["lat"]),
@@ -2154,6 +2065,24 @@ server <- function(input, output, session) {
       }, silent = TRUE)
     }
     
+    min_rsf_dist_global <- NA_real_
+    rsf_program_name_global <- NA_character_
+    if (!is.null(user_point_sf) && exists("rsfprogram_dist_raster") && exists("rsfprogram_id_raster") && exists("rsf_projects")) {
+      try({
+        min_rsf_dist_global <- (rsfprogram_dist_raster |> extract(vect(user_point_sf)) |> pull(1))[1]
+        user_point_rsf_pid <- (rsfprogram_id_raster |> extract(vect(user_point_sf)) |> pull(2))[1]
+        rsf_program_name_global <- rsf_projects |>
+          dplyr::filter(as.numeric(.data$polygon_id) == as.numeric(user_point_rsf_pid)) |>
+          dplyr::pull(.data$prj_name)
+        if (length(rsf_program_name_global) == 0 || is.na(rsf_program_name_global[1])) {
+          rsf_program_name_global <- "Unknown RSF program"
+        } else {
+          rsf_program_name_global <- rsf_program_name_global[1]
+        }
+      }, silent = TRUE)
+    }
+
+
     withProgress(message = "Analyzing isochrones...", value = 0, {
 
     for (i in seq_len(n_isos)) {
@@ -2238,17 +2167,29 @@ server <- function(input, output, session) {
         ndvi_vals <- ndvi_vals[!is.na(ndvi_vals)]
         mean_ndvi <- ifelse(length(ndvi_vals) > 0, round(mean(ndvi_vals, na.rm = TRUE), 3), NA_real_)
       }
-      
-      inter_gbif <- safe_vect_gbif_intersection(poly_i)
-      n_records <- if (!is.null(inter_gbif)) nrow(inter_gbif) else 0
-      n_species <- if (!is.null(inter_gbif) && "species" %in% names(inter_gbif) && nrow(inter_gbif) > 0) length(unique(inter_gbif$species)) else 0
-      n_birds   <- if (!is.null(inter_gbif) && nrow(inter_gbif) > 0 && all(c("species", "class") %in% names(inter_gbif))) length(unique(inter_gbif$species[inter_gbif$class == "Aves"])) else 0
-      n_mammals <- if (!is.null(inter_gbif) && nrow(inter_gbif) > 0 && all(c("species", "class") %in% names(inter_gbif))) length(unique(inter_gbif$species[inter_gbif$class == "Mammalia"])) else 0
-      n_plants  <- if (!is.null(inter_gbif) && nrow(inter_gbif) > 0 && all(c("species", "class") %in% names(inter_gbif))) {
-        length(unique(inter_gbif$species[inter_gbif$class %in%
-                                           c("Magnoliopsida", "Liliopsida", "Pinopsida", "Polypodiopsida",
-                                             "Equisetopsida", "Bryopsida", "Marchantiopsida")]))
-      } else 0
+
+      iso_wkt <- st_as_text(st_geometry(poly_i)[[1]])
+      gbif_summary <- tryCatch({
+        gbif_tab |>
+          filter(sql(glue("ST_Intersects(ST_GeomFromText(geom_wkt), ST_GeomFromText('{iso_wkt}'))"))) |>
+          summarise(
+            n_records = n(),
+            n_species = n_distinct(species),
+            n_birds   = n_distinct(case_when(class == "Aves"     ~ species, TRUE ~ NA_character_)),
+            n_mammals = n_distinct(case_when(class == "Mammalia" ~ species, TRUE ~ NA_character_)),
+            n_plants  = n_distinct(case_when(
+              class %in% c("Magnoliopsida", "Liliopsida", "Pinopsida", "Polypodiopsida",
+                           "Equisetopsida", "Bryopsida",  "Marchantiopsida") ~ species,
+              TRUE ~ NA_character_
+            ))
+          ) |>
+          collect()
+      }, error = function(e) NULL)
+      n_records <- if (!is.null(gbif_summary) && nrow(gbif_summary) > 0) gbif_summary$n_records[[1]] else 0L
+      n_species <- if (!is.null(gbif_summary) && nrow(gbif_summary) > 0) gbif_summary$n_species[[1]] else 0L
+      n_birds   <- if (!is.null(gbif_summary) && nrow(gbif_summary) > 0) gbif_summary$n_birds[[1]]   else 0L
+      n_mammals <- if (!is.null(gbif_summary) && nrow(gbif_summary) > 0) gbif_summary$n_mammals[[1]] else 0L
+      n_plants  <- if (!is.null(gbif_summary) && nrow(gbif_summary) > 0) gbif_summary$n_plants[[1]]  else 0L
       
       n_transit_stops <- NA_real_
       transit_access_score <- NA_real_
@@ -2358,6 +2299,8 @@ server <- function(input, output, session) {
         SF_EJ_Score            = mean_ej_score,
         closest_greenspace     = osm_greenspace_name_global,
         closest_greenspace_dist_m = min_dist_val_global,
+        closest_rsf_program    = rsf_program_name_global,
+        closest_rsf_program_dist_m = min_rsf_dist_global,
         stringsAsFactors       = FALSE
       )
       
@@ -2366,11 +2309,14 @@ server <- function(input, output, session) {
 
     }) # end withProgress
 
-    iso_union <- st_union(iso_data)
-    inter_all_gbif <- safe_vect_gbif_intersection(st_as_sf(iso_union))
-    union_n_species <- if (!is.null(inter_all_gbif) && "species" %in% names(inter_all_gbif) && nrow(inter_all_gbif) > 0) {
-      length(unique(inter_all_gbif$species))
-    } else 0
+    union_wkt <- st_as_text(st_geometry(st_union(iso_data))[[1]])
+    union_n_species <- tryCatch({
+      gbif_tab |>
+        filter(sql(glue("ST_Intersects(ST_GeomFromText(geom_wkt), ST_GeomFromText('{union_wkt}'))"))) |>
+        summarise(n_species = n_distinct(species)) |>
+        collect() |>
+        pull(n_species)
+    }, error = function(e) 0L)
     
     attr(results, "bio_percentile") <- round(100 * ecdf(cbg_vect_sf$unique_species)(union_n_species), 1)
     
@@ -2397,6 +2343,17 @@ server <- function(input, output, session) {
       } else {
         attr(results, "closest_greenspace") <- "None"
         attr(results, "closest_greenspace_dist_m") <- NA_real_
+      }
+      
+      closest_rsf <- results |>
+        filter(!is.na(closest_rsf_program_dist_m)) |>
+        slice_min(closest_rsf_program_dist_m, n = 1)
+      if (nrow(closest_rsf) > 0) {
+        attr(results, "closest_rsf_program") <- closest_rsf$closest_rsf_program[1]
+        attr(results, "closest_rsf_program_dist_m") <- closest_rsf$closest_rsf_program_dist_m[1]
+      } else {
+        attr(results, "closest_rsf_program") <- "None"
+        attr(results, "closest_rsf_program_dist_m") <- NA_real_
       }
     }
     
@@ -2550,6 +2507,22 @@ server <- function(input, output, session) {
       hr(),
       strong("Greenspace Cover:"),
       p(gs_pct_label)
+    )
+  })
+  
+  output$closestRSFProgramUI <- renderUI({
+    df <- socio_data()
+    if (nrow(df) == 0) return(NULL)
+    
+    rsf_name <- attr(df, "closest_rsf_program")
+    rsf_dist <- attr(df, "closest_rsf_program_dist_m")
+    
+    if (is.null(rsf_name) || is.na(rsf_name)) rsf_name <- "None"
+    
+    tagList(
+      strong("Nearest RSF program (to your selected point):"),
+      p(rsf_name),
+      if (!is.null(rsf_dist) && !is.na(rsf_dist)) p(paste0("Distance: ", round(rsf_dist, 1), " m"))
     )
   })
   
