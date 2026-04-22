@@ -1471,7 +1471,7 @@ server <- function(input, output, session) {
         color = "white", weight = 1, label = ~n_observations
       )
     
-    if (!is.null(hotspot_sf)) {
+    if (FALSE && !is.null(hotspot_sf)) {
       m <- m |>
         addPolygons(
           data = hotspot_sf,
@@ -1481,7 +1481,7 @@ server <- function(input, output, session) {
         )
     }
     
-    if (!is.null(coldspot_sf)) {
+    if (FALSE && !is.null(coldspot_sf)) {
       m <- m |>
         addPolygons(
           data = coldspot_sf,
@@ -1517,7 +1517,7 @@ server <- function(input, output, session) {
         )
     }
     
-    if (exists("greenspace_dist_raster")) {
+    if (FALSE && exists("greenspace_dist_raster")) {
       greenspace_vals_clean <- values(greenspace_dist_raster) |>
         as.vector() |>
         (\(x) x[is.finite(x)])()
@@ -1549,7 +1549,7 @@ server <- function(input, output, session) {
       }
     }
     
-    if (exists("rsfprogram_dist_raster")) {
+    if (FALSE && exists("rsfprogram_dist_raster")) {
       rsf_vals_clean <- values(rsfprogram_dist_raster) |>
         as.vector() |>
         (\(x) x[is.finite(x)])()
@@ -1685,8 +1685,9 @@ server <- function(input, output, session) {
       addLayersControl(
         baseGroups = c("CartoDB.Positron", "Street Map (Default)", "Satellite (ESRI)"),
         overlayGroups = c(
-          "Income", "Greenspace", "Greenspace Distance", "RSF Program Distance", "RSF Program Projects",
-          "Hotspots (KnowBR)", "Coldspots (KnowBR)",
+          "Income", "Greenspace", #"Greenspace Distance", "RSF Program Distance",
+          "RSF Program Projects",
+          #"Hotspots (KnowBR)", "Coldspots (KnowBR)",
           "Species Richness", "Data Availability",
           "CalEnviroScreen (CI Score)", "SF EJ Communities",
           "Transit Routes", "Transit Stops",
@@ -1696,11 +1697,11 @@ server <- function(input, output, session) {
       ) |>
       hideGroup("Income") |>
       hideGroup("Greenspace") |>
-      hideGroup("Greenspace Distance") |>
-      hideGroup("RSF Program Distance") |>
+      # hideGroup("Greenspace Distance") |>
+      # hideGroup("RSF Program Distance") |>
       hideGroup("RSF Program Projects") |>
-      hideGroup("Hotspots (KnowBR)") |>
-      hideGroup("Coldspots (KnowBR)") |>
+      # hideGroup("Hotspots (KnowBR)") |>
+      # hideGroup("Coldspots (KnowBR)") |>
       hideGroup("Species Richness") |>
       hideGroup("Data Availability") |>
       hideGroup("CalEnviroScreen (CI Score)") |>
