@@ -95,9 +95,8 @@ All axes scaled 0–1. BAI = unweighted mean of all seven standardized component
 
 ```
 SF_biodiv_access_shiny/
-├── app_v2.R              # Main app (sources Rscripts/setup_unified.R)
-├── app.R                 # Alternate entry; also uses setup_unified.R
-├── Dockerfile            # HF Spaces: install.r + shiny::runApp('app_v2.R', …)
+├── app.R                 # Main app (sources Rscripts/setup_unified.R)
+├── Dockerfile            # HF Spaces: install.r + shiny::runApp('app.R', …)
 ├── install.r             # R package list for Docker
 ├── www/                  # Static assets (e.g. app_pastel.css, logos)
 ├── Rscripts/
@@ -166,7 +165,7 @@ source("Rscripts/prep/run_all_prep.R")
 
 **Step 3: Run the app**
 ```r
-shiny::runApp("app_v2.R")
+shiny::runApp("app.R")
 ```
 
 ### Startup Performance
@@ -177,7 +176,7 @@ Typical startup time: **~6–12 seconds** depending on whether caches exist.
 
 ## Cloud Deployment (HuggingFace Spaces)
 
-The app is deployed via Docker on HuggingFace Spaces using `app_v2.R` + `Rscripts/setup_unified.R`. Data is downloaded from the HuggingFace dataset repository into `data/cached/` at startup — no large files need to be bundled in the image.
+The app is deployed via Docker on HuggingFace Spaces using `app.R` + `Rscripts/setup_unified.R`. Data is downloaded from the HuggingFace dataset repository into `data/cached/` at startup — no large files need to be bundled in the image.
 
 See `Dockerfile` for the deployment configuration.
 

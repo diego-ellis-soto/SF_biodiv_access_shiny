@@ -13,5 +13,5 @@ RUN Rscript install.r
 # Hugging Face Spaces expects port 7860
 EXPOSE 7860
 
-# Entry app (use app.R instead if that is your deployed entrypoint)
-CMD ["R", "--quiet", "-e", "shiny::runApp('app_v2.R', host='0.0.0.0', port=7860)"]
+# Entry app
+CMD ["R", "--quiet", "-e", "shiny::runApp('app.R', host='0.0.0.0', port=7860)"]
