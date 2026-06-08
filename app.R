@@ -16,29 +16,37 @@
 # =============================================================================
 # PACKAGES
 # =============================================================================
-require(shinyjs)
+# require(shinyjs)      # commented: useShinyjs() enabled features the app never calls
 library(shiny)
 library(shinydashboard)
 library(leaflet)
 library(mapboxapi)
 library(tidyverse)
-library(tidycensus)
+# library(tidycensus)   # commented: unused in app (CBG data is precomputed) -- speeds startup
 library(sf)
 library(DT)
-library(RColorBrewer)
+# library(RColorBrewer) # commented: brewer.pal only appears in dead if(FALSE) blocks
 library(terra)
-library(data.table)
-library(mapview)
-library(sjPlot)
-library(sjlabelled)
+# Commented out: no detectable use in the app, and loading them added ~1-2 s to
+# startup (mapview/sjPlot/sjlabelled each pull large dependency trees). Re-enable
+# the relevant line if you start using one.
+# library(data.table)
+# library(mapview)
+# library(sjPlot)
+# library(sjlabelled)
 library(bslib)
 library(shinycssloaders)
 library(DBI)
 library(duckdb)
 library(dbplyr)
-library(gtfsrouter)
-library(tidytransit)
-library(fmsb)
+# Called only via pkg:: at runtime, so each namespace loads on first use -- no
+# startup attach needed (keeps their dependency trees off startup, ~0.5-1 s):
+#   gtfsrouter   -- transit routing (gtfsrouter::gtfs_route / gtfs_isochrone)
+#   tidytransit  -- headway computation, fallback only (tidytransit::*)
+#   fmsb         -- spider/radar plot (fmsb::radarchart)
+# library(gtfsrouter)
+# library(tidytransit)
+# library(fmsb)
 library(scales)
 
 # =============================================================================
@@ -47,15 +55,11 @@ library(scales)
 # Set this to your project folder if needed
 # setwd('/Users/diegoellis/Desktop/Projects/Postdoc/OLD_SF_BIODIV_ACCESS/SF_biodiv_access/backup-shiny/')
 
-# setup_unified.R checks local files first, falls back to HuggingFace downloads.
+# setup_unified.R checks local files first, falling back to HuggingFace
+# downloads, and loads everything the app needs at startup. The two expensive
+# products (CBG x greenspace coverage, transit timetable) are precomputed in
+# Rscripts/prep/ and just read here, so startup stays fast.
 source("Rscripts/setup_unified.R")
-
-# setup_local.R loads: cbg_vect_sf, ndvi, osm_greenspace, biodiv_hotspots,
-# biodiv_coldspots, greenspace_dist_raster, greenspace_osmid_raster,
-# rsfprogram_dist_raster, rsfprogram_id_raster,
-# gbif_parquet (local parquet path), rsf_projects,
-# gtfs_stops_sf, gtfs_routes_sf, gtfs_router,
-# cenv_sf, sf_ej_sf
 
 # =============================================================================
 # GLOBAL CONFIG
@@ -527,7 +531,7 @@ ui <- dashboardPage(
   dashboardBody(
     tags$head(tags$link(rel = "stylesheet", type = "text/css", href = "app_pastel.css")),
     theme = theme,
-    useShinyjs(),
+    # useShinyjs(),   # removed with library(shinyjs) -- no shinyjs features are used
     div(id = "loading", style = "display:none; font-size:20px; color:red;", "Calculating..."),
     
     tabItems(
@@ -609,7 +613,7 @@ ui <- dashboardPage(
           
           box(
             title = "Map", status = "success", solidHeader = TRUE, width = 9,
-            leafletOutput("isoMap", height = 600)
+            leafletOutput("isoMap", height = 600) %>% withSpinner(type = 8, color = "#28a745")
           )
         ),
         
@@ -720,7 +724,7 @@ ui <- dashboardPage(
             status = "success",
             solidHeader = TRUE,
             width = 12,
-            leafletOutput("communityMap", height = 600)
+            leafletOutput("communityMap", height = 600) %>% withSpinner(type = 8, color = "#28a745")
           )
         ),
         fluidRow(
@@ -1354,26 +1358,17 @@ server <- function(input, output, session) {
       numeric(0)
     }
     
-    # Greenspace coverage (%) per CBG via OSM greenspace polygon intersection
+    # Greenspace coverage (%) per CBG, read from the precomputed coverage table
+    # (Rscripts/prep/build_cbg_greenspace_coverage.R) -- the same source the socio
+    # summary uses -- instead of recomputing the CBG x greenspace intersection.
+    # gs_pct = 100 * greenspace_m2 / cbg_area_m2 reproduces the old value exactly.
     greenspace_cover_bench <- tryCatch({
-      message("Computing per-CBG greenspace coverage for BAI benchmark...")
-      cbg_proj <- st_transform(cbg_bench, 3857)
-      gs_proj  <- st_transform(osm_greenspace, 3857) |> st_make_valid()
-      gs_union <- st_union(gs_proj)
-      cbg_gs_inter <- st_intersection(cbg_proj, gs_union)
-      cbg_gs_area <- cbg_gs_inter |>
-        mutate(gs_area_m2 = as.numeric(st_area(geometry))) |>
-        st_drop_geometry() |>
-        group_by(GEOID) |>
-        summarise(gs_area_m2 = sum(gs_area_m2), .groups = "drop")
-      cbg_bench |>
-        st_drop_geometry() |>
-        select(GEOID, area_km2) |>
-        left_join(cbg_gs_area, by = "GEOID") |>
-        mutate(
-          gs_area_m2 = replace_na(gs_area_m2, 0),
-          gs_pct = 100 * gs_area_m2 / (area_km2 * 1e6)
-        ) |>
+      cov_path <- hf_or_local("cbg_greenspace_coverage.csv")
+      readr::read_csv(cov_path, col_types = readr::cols(GEOID = readr::col_character()),
+                      show_col_types = FALSE) |>
+        # NA (not 0) for zero-area CBGs so the is.finite() filter below drops them,
+        # matching the old inline computation exactly.
+        mutate(gs_pct = ifelse(cbg_area_m2 > 0, 100 * greenspace_m2 / cbg_area_m2, NA_real_)) |>
         pull(gs_pct)
     }, error = function(e) {
       warning("Greenspace coverage benchmark failed: ", e$message)

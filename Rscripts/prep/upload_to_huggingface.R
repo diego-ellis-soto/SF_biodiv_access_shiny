@@ -33,7 +33,8 @@ artifacts <- c(
   "sf_muni_gtfs.zip",
   "calenviro_sf.gpkg",
   "sf_ej_communities_map.gpkg",
-  "RSF_Program_Projects_polygons.gpkg"
+  "RSF_Program_Projects_polygons.gpkg",
+  "cbg_greenspace_coverage.csv"
 )
 
 for (f in artifacts) {
