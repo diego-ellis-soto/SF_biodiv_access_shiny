@@ -512,6 +512,30 @@ build_walk_transit_isochrone <- function(
   standardize_iso_sf(iso_sf, mode_name = "walk_transit", time_min = total_time_min)
 }
 
+# Shared isochrone -> metrics -> BAI -> radar functions. Both the Isochrone
+# Explorer tab and the Isochrone Comparer tab call these, so the scoring logic
+# lives in one place. (Reads the setup_unified.R globals + helpers above; the
+# per-session gbif_tab / city_benchmarks are passed in as arguments.)
+#
+# local = TRUE is required: runApp() evaluates this app.R inside its own app
+# environment, so mapbox_token and the helper functions above live there, not in
+# the global env. Sourcing with the default (local = FALSE) would define these
+# functions in the global env, where they could not see mapbox_token/pretty_mode/
+# etc. -> "object 'mapbox_token' not found". local = TRUE defines them right here
+# in the app env, alongside the helpers they call.
+source("Rscripts/iso_metrics.R", local = TRUE)
+
+# Transport-mode choices, shared by the Explorer checkboxes and the Comparer
+# single-select dropdowns so both tabs offer the same modes.
+transport_mode_choices <- list(
+  "Driving"               = "driving",
+  "Walking"               = "walking",
+  "Cycling"               = "cycling",
+  "Driving with Traffic"  = "driving-traffic",
+  "Transit (GTFS)"        = "transit",
+  "Walk + Transit (Muni)" = "walk_transit"
+)
+
 # =============================================================================
 # UI
 # =============================================================================
@@ -522,6 +546,7 @@ ui <- dashboardPage(
   dashboardSidebar(
     sidebarMenu(id = "tabs",
                 menuItem("Isochrone Explorer", tabName = "isochrone", icon = icon("map-marker-alt")),
+                menuItem("Isochrone Comparer", tabName = "comparer", icon = icon("balance-scale")),
                 menuItem("GBIF Summaries", tabName = "gbif", icon = icon("table")),
                 menuItem("Community Science", tabName = "community_science", icon = icon("users")),
                 menuItem("About", tabName = "about", icon = icon("info-circle"))
@@ -628,12 +653,17 @@ ui <- dashboardPage(
           box(title = "Closest RSF Program", status = "success", solidHeader = TRUE, width = 6, uiOutput("closestRSFProgramUI"))
         ),
         
-        fluidRow(
-          box(
-            title = "Biodiversity Access Index Profile",
-            status = "warning", solidHeader = TRUE, width = 12,
-            p("This spider plot summarizes biodiversity access across mobility, biodiversity, observation intensity, environmental quality, and equity context."),
-            plotOutput("radarPlot", height = "650px") %>% withSpinner(type = 8, color = "#f0ad4e")
+        # Spider plot is hidden until isochrones exist (output.iso_ready), so the
+        # large box doesn't sit empty before anything is generated.
+        conditionalPanel(
+          condition = "output.iso_ready",
+          fluidRow(
+            box(
+              title = "Biodiversity Access Index Profile",
+              status = "warning", solidHeader = TRUE, width = 12, collapsible = TRUE,
+              p("This spider plot summarizes biodiversity access across mobility, biodiversity, observation intensity, environmental quality, and equity context."),
+              plotOutput("radarPlot", height = "650px") %>% withSpinner(type = 8, color = "#f0ad4e")
+            )
           )
         ),
         
@@ -683,7 +713,95 @@ ui <- dashboardPage(
         )
       )
       ),
-      
+
+      # =====================================================================
+      # Isochrone Comparer tab
+      # =====================================================================
+      # Two independent points, one isochrone each (single mode + time), shown
+      # side by side. Nothing here computes until the user clicks "Compare"
+      # (cmp_results is an eventReactive), and the outputs only render once the
+      # tab is opened (Shiny suspends hidden outputs) -- so users who never open
+      # this tab pay no cost. All scoring reuses the shared iso_metrics.R funcs.
+      tabItem(
+        tabName = "comparer",
+        fluidRow(
+          box(
+            width = 12, status = "warning", solidHeader = FALSE,
+            h4("Compare two locations side by side"),
+            p("Place two points (click a map or search an address), pick one transport mode and travel time for each, then press Compare. ",
+              "The spider plots and difference table summarise how biodiversity access differs between the two.")
+          )
+        ),
+
+        fluidRow(
+          # --- Point A picker ---
+          box(
+            title = "Point A", status = "success", solidHeader = TRUE, width = 6,
+            mapboxGeocoderInput(
+              inputId = "cmp_geocoder_a",
+              placeholder = "Search an address (Point A)",
+              access_token = mapbox_token
+            ),
+            leafletOutput("cmp_map_a", height = 400) %>% withSpinner(type = 8, color = "#1b9e77"),
+            helpText("Click the map or search an address to place Point A."),
+            fluidRow(
+              column(7, selectInput("cmp_mode_a", "Mode:", choices = transport_mode_choices, selected = "walking", selectize = FALSE)),
+              column(5, selectInput("cmp_time_a", "Time (min):", choices = c(5, 10, 15), selected = 10, selectize = FALSE))
+            )
+          ),
+          # --- Point B picker ---
+          box(
+            title = "Point B", status = "primary", solidHeader = TRUE, width = 6,
+            mapboxGeocoderInput(
+              inputId = "cmp_geocoder_b",
+              placeholder = "Search an address (Point B)",
+              access_token = mapbox_token
+            ),
+            leafletOutput("cmp_map_b", height = 400) %>% withSpinner(type = 8, color = "#2c7fb8"),
+            helpText("Click the map or search an address to place Point B."),
+            fluidRow(
+              column(7, selectInput("cmp_mode_b", "Mode:", choices = transport_mode_choices, selected = "walking", selectize = FALSE)),
+              column(5, selectInput("cmp_time_b", "Time (min):", choices = c(5, 10, 15), selected = 10, selectize = FALSE))
+            )
+          )
+        ),
+
+        fluidRow(
+          column(
+            width = 12, align = "center",
+            actionButton("cmp_compare", "Compare", icon = icon("balance-scale"),
+                         class = "btn-success btn-lg",
+                         style = "padding: 12px 45px; font-size: 20px; font-weight: 600;"),
+          )
+        ),
+
+        # Results stay hidden until Compare has produced something (output.cmp_ready),
+        # so the spider boxes don't sit empty before the first comparison.
+        conditionalPanel(
+          condition = "output.cmp_ready",
+
+          fluidRow(
+            box(
+              title = "BAI Spider — Point A vs Point B", status = "warning", solidHeader = TRUE,
+              width = 12, collapsible = TRUE,
+              p("Both points on one axis: ",
+                span("Point A", style = "color:#1b9e77; font-weight:600;"), " vs ",
+                span("Point B", style = "color:#2c7fb8; font-weight:600;"),
+                ". Each spoke is scored 0–100 against the citywide distribution."),
+              plotOutput("cmp_radar", height = "620px") %>% withSpinner(type = 8, color = "#f0ad4e")
+            )
+          ),
+
+          fluidRow(
+            box(
+              title = "Difference (Point B − Point A)", status = "warning", solidHeader = TRUE, width = 12,
+              p("Point B minus Point A for each metric. Greenspace is reported by name, so its row shows the gap in distance to the nearest greenspace."),
+              DTOutput("cmp_diff_table") %>% withSpinner(type = 8, color = "#f0ad4e")
+            )
+          )
+        )
+      ),
+
       tabItem(
         tabName = "gbif",
         fluidRow(
@@ -1760,6 +1878,15 @@ server <- function(input, output, session) {
   iso_store       <- reactiveValues(data = NULL)
   isochrones_data <- reactive({ iso_store$data })
 
+  # Flag for the conditionalPanel that reveals the spider plot once isochrones
+  # exist. suspendWhenHidden = FALSE so the condition is evaluated while the box
+  # is still hidden.
+  output$iso_ready <- reactive({
+    d <- isochrones_data()
+    !is.null(d) && nrow(d) > 0
+  })
+  outputOptions(output, "iso_ready", suspendWhenHidden = FALSE)
+
   observeEvent(input$generate_iso, {
     pt <- chosen_point()
     if (is.null(pt)) return()
@@ -1772,124 +1899,17 @@ server <- function(input, output, session) {
       clearGroup("Transit Isochrones") |>
       clearGroup("NDVI Raster")
 
-    location_sf <- st_as_sf(
-      data.frame(lon = pt["lon"], lat = pt["lat"]),
-      coords = c("lon", "lat"),
-      crs = 4326
+    # All isochrone construction lives in build_isochrones() (Rscripts/iso_metrics.R)
+    # so the comparer tab builds isochrones the exact same way.
+    iso_store$data <- build_isochrones(
+      point                        = pt,
+      modes                        = input$transport_modes,
+      times                        = input$iso_times,
+      transit_hour                 = input$transit_hour,
+      walk_to_stop_min             = input$walk_to_stop_min,
+      walk_from_stop_min           = input$walk_from_stop_min,
+      transit_departure_window_min = input$transit_departure_window_min
     )
-
-    iso_list <- list()
-
-    mapbox_modes <- intersect(input$transport_modes, c("driving", "walking", "cycling", "driving-traffic"))
-
-    for (mode in mapbox_modes) {
-      for (t in as.numeric(input$iso_times)) {
-        iso <- tryCatch(
-          mb_isochrone(location_sf, time = t, profile = mode, access_token = mapbox_token),
-          error = function(e) NULL
-        )
-
-        if (!is.null(iso)) {
-          iso_std <- standardize_iso_sf(iso, mode_name = mode, time_min = t)
-          if (!is.null(iso_std)) iso_list <- append(iso_list, list(iso_std))
-        }
-      }
-    }
-
-    if ("transit" %in% input$transport_modes && !is.null(gtfs_router) && !is.null(gtfs_stops_sf)) {
-      stop_dists <- st_distance(location_sf, gtfs_stops_sf)
-      nearest_idx <- which.min(stop_dists)
-      nearest_id <- as.character(gtfs_stops_sf$stop_id[nearest_idx])
-      dep_secs <- as.numeric(input$transit_hour) * 3600
-
-      for (t in as.numeric(input$iso_times)) {
-        iso_poly <- NULL
-
-        if (!is.null(transit_iso_cache) &&
-            !is.null(transit_iso_cache[[nearest_id]]) &&
-            !is.null(transit_iso_cache[[nearest_id]][[as.character(t)]])) {
-          iso_poly <- transit_iso_cache[[nearest_id]][[as.character(t)]]
-        }
-
-        if (is.null(iso_poly)) {
-          iso_result <- tryCatch(
-            gtfsrouter::gtfs_isochrone(
-              gtfs       = gtfs_router,
-              from       = nearest_id,
-              start_time = dep_secs,
-              end_time   = dep_secs + t * 60,
-              from_is_id = TRUE
-            ),
-            error = function(e) NULL
-          )
-
-          if (!is.null(iso_result) && nrow(iso_result) > 2) {
-            reachable_sf <- gtfs_stops_sf |>
-              filter(stop_id %in% as.character(iso_result$stop_id))
-
-            if (nrow(reachable_sf) > 2) {
-              iso_poly <- st_convex_hull(st_union(reachable_sf))
-            } else if (nrow(reachable_sf) > 0) {
-              iso_poly <- st_union(st_buffer(st_transform(reachable_sf, 3857), 100)) |>
-                st_transform(4326)
-            }
-          }
-        }
-
-        if (!is.null(iso_poly)) {
-          iso_sf <- st_sf(
-            mode = "transit",
-            time = as.numeric(t),
-            geometry = st_geometry(st_as_sf(iso_poly)),
-            crs = 4326
-          )
-          iso_sf <- standardize_iso_sf(iso_sf, mode_name = "transit", time_min = t)
-          iso_list <- append(iso_list, list(iso_sf))
-        }
-      }
-    }
-
-    if ("walk_transit" %in% input$transport_modes && !is.null(gtfs_router) && !is.null(gtfs_stops_sf)) {
-      dep_secs <- as.numeric(input$transit_hour) * 3600
-
-      valid_times <- as.numeric(input$iso_times)[
-        as.numeric(input$iso_times) > input$walk_to_stop_min
-      ]
-
-      for (t in valid_times) {
-        wt_iso <- tryCatch(
-          build_walk_transit_isochrone(
-            location_sf            = location_sf,
-            total_time_min         = t,
-            dep_secs               = dep_secs,
-            walk_to_stop_min       = input$walk_to_stop_min,
-            walk_from_stop_min     = input$walk_from_stop_min,
-            gtfs_stops_sf          = gtfs_stops_sf,
-            gtfs_router            = gtfs_router,
-            mapbox_token           = mapbox_token,
-            departure_window_min   = input$transit_departure_window_min,
-            departure_step_min     = 5,
-            max_last_mile_stops    = 12,
-            include_first_mile_polygon = TRUE
-          ),
-          error = function(e) NULL
-        )
-
-        if (!is.null(wt_iso) && nrow(wt_iso) > 0) {
-          iso_list <- append(iso_list, list(wt_iso))
-        }
-      }
-    }
-
-    if (length(iso_list) == 0) {
-      iso_store$data <- NULL
-      return()
-    }
-
-    iso_store$data <- dplyr::bind_rows(iso_list) |>
-      st_as_sf() |>
-      st_make_valid() |>
-      st_transform(4326)
   })
   
   # ---------------------------------------------------------------------------
@@ -2020,379 +2040,19 @@ server <- function(input, output, session) {
   socio_data <- reactive({
     iso_data <- isochrones_data()
     if (is.null(iso_data) || nrow(iso_data) == 0) return(data.frame())
-    
-    hotspot_union <- safe_biodiv_hotspots()
-    coldspot_union <- safe_biodiv_coldspots()
-    
-    if (!is.null(hotspot_union)) hotspot_union <- st_union(hotspot_union)
-    if (!is.null(coldspot_union)) coldspot_union <- st_union(coldspot_union)
-    
-    acs_wide <- cbg_vect_sf |>
-      mutate(population = popE, med_income = medincE)
-    
-    results <- data.frame()
-    n_isos <- nrow(iso_data)
 
-    user_point_sf <- NULL
-    pt <- isolate(chosen_point())
-    if (!is.null(pt)) {
-      user_point_sf <- st_as_sf(
-        data.frame(lon = pt["lon"], lat = pt["lat"]),
-        coords = c("lon", "lat"),
-        crs = 4326
-      )
-    }
-    
-    min_dist_val_global <- NA_real_
-    osm_greenspace_name_global <- NA_character_
-    if (!is.null(user_point_sf) && exists("greenspace_dist_raster") && exists("greenspace_osmid_raster")) {
-      try({
-        min_dist_val_global <- (greenspace_dist_raster |> extract(vect(user_point_sf)) |> pull(1))[1]
-        user_point_osm_id <- (greenspace_osmid_raster |> extract(vect(user_point_sf)) |> pull(2))[1]
-        osm_greenspace_name_global <- osm_greenspace |>
-          mutate(osm_id = as.numeric(osm_id)) |>
-          filter(osm_id == user_point_osm_id) |>
-          pull(name)
-        if (length(osm_greenspace_name_global) == 0 || is.na(osm_greenspace_name_global[1])) {
-          osm_greenspace_name_global <- "Unnamed Greenspace"
-        } else {
-          osm_greenspace_name_global <- osm_greenspace_name_global[1]
-        }
-      }, silent = TRUE)
-    }
-    
-    min_rsf_dist_global <- NA_real_
-    rsf_program_name_global <- NA_character_
-    if (!is.null(user_point_sf) && exists("rsfprogram_dist_raster") && exists("rsfprogram_id_raster") && exists("rsf_projects")) {
-      try({
-        min_rsf_dist_global <- (rsfprogram_dist_raster |> extract(vect(user_point_sf)) |> pull(1))[1]
-        user_point_rsf_pid <- (rsfprogram_id_raster |> extract(vect(user_point_sf)) |> pull(2))[1]
-        rsf_program_name_global <- rsf_projects |>
-          dplyr::filter(as.numeric(.data$polygon_id) == as.numeric(user_point_rsf_pid)) |>
-          dplyr::pull(.data$prj_name)
-        if (length(rsf_program_name_global) == 0 || is.na(rsf_program_name_global[1])) {
-          rsf_program_name_global <- "Unknown RSF program"
-        } else {
-          rsf_program_name_global <- rsf_program_name_global[1]
-        }
-      }, silent = TRUE)
-    }
-
-
-    withProgress(message = "Analyzing isochrones...", value = 0, {
-
-    for (i in seq_len(n_isos)) {
-      poly_i <- iso_data[i, ]
-      vect_poly_i <- vect(poly_i)
-
-      incProgress(
-        1 / n_isos,
-        detail = paste0(
-          pretty_mode(as.character(poly_i$mode[[1]])),
-          " \u2013 ", poly_i$time[[1]], " min"
-        )
-      )
-      
-      dist_hot_km <- if (!is.null(hotspot_union)) {
-        round(as.numeric(min(st_distance(poly_i, hotspot_union))) / 1000, 3)
-      } else NA_real_
-      
-      dist_cold_km <- if (!is.null(coldspot_union)) {
-        round(as.numeric(min(st_distance(poly_i, coldspot_union))) / 1000, 3)
-      } else NA_real_
-      
-      inter_acs <- tryCatch(intersect(vect(acs_wide), vect_poly_i) |> st_as_sf(), error = function(e) NULL)
-      
-      pop_total <- 0
-      w_income  <- NA_real_
-      if (!is.null(inter_acs) && nrow(inter_acs) > 0) {
-        inter_acs <- inter_acs |>
-          mutate(
-            area_num = as.numeric(st_area(st_transform(geometry, 3857))),
-            weighted_pop = population * (area_num / sum(area_num, na.rm = TRUE))
-          )
-        pop_total <- round(sum(inter_acs$weighted_pop, na.rm = TRUE))
-        w_income  <- sum(inter_acs$med_income * inter_acs$area_num, na.rm = TRUE) /
-          sum(inter_acs$area_num, na.rm = TRUE)
-      }
-      
-      iso_area_m2 <- as.numeric(st_area(st_transform(poly_i, 3857)))
-      iso_area_km2 <- round(iso_area_m2 / 1e6, 3)
-      
-      # Greenspace area within this isochrone: use pre-cached per-CBG coverage
-      # (replaces slow per-isochrone raster cellSize() which took ~40-55 s each).
-      # Method: intersect isochrone with CBGs, scale each CBG's greenspace_m2 by
-      # the fraction of that CBG falling inside the isochrone, then sum.
-      gs_area_m2 <- tryCatch({
-        if (exists("cbg_greenspace_coverage") && !is.null(cbg_greenspace_coverage)) {
-          poly_proj  <- st_transform(poly_i, 3857)
-          cbg_proj_i <- st_transform(cbg_vect_sf[, "GEOID"], 3857) |>
-            mutate(cbg_area_m2 = as.numeric(st_area(geometry))) |>
-            st_make_valid()
-          inter_df <- st_intersection(cbg_proj_i, poly_proj) |>
-            mutate(inter_area_m2 = as.numeric(st_area(geometry))) |>
-            st_drop_geometry() |>
-            left_join(
-              cbg_greenspace_coverage[, c("GEOID", "greenspace_m2", "cbg_area_m2")],
-              by = "GEOID", suffix = c("_iso", "_cbg")
-            ) |>
-            mutate(
-              greenspace_m2  = tidyr::replace_na(greenspace_m2, 0),
-              cbg_area_m2    = dplyr::coalesce(cbg_area_m2_cbg, cbg_area_m2_iso),
-              contrib        = ifelse(cbg_area_m2 > 0,
-                                      inter_area_m2 / cbg_area_m2 * greenspace_m2,
-                                      0)
-            )
-          sum(inter_df$contrib, na.rm = TRUE)
-        } else if (exists("greenspace_dist_raster")) {
-          # Fallback to raster method if cache is unavailable
-          dist_crop <- terra::crop(greenspace_dist_raster, vect_poly_i)
-          dist_mask <- terra::mask(dist_crop, vect_poly_i)
-          is_greenspace <- dist_mask == 0
-          cell_areas <- terra::cellSize(is_greenspace, unit = "m")
-          as.numeric(terra::global(cell_areas * is_greenspace, "sum", na.rm = TRUE)[1, 1])
-        } else {
-          0
-        }
-      }, error = function(e) 0)
-      gs_percent <- ifelse(iso_area_m2 > 0, 100 * gs_area_m2 / iso_area_m2, 0)
-      
-      mean_ndvi <- NA_real_
-      if (exists("ndvi")) {
-        ndvi_vals <- tryCatch(values(terra::mask(terra::crop(ndvi, vect_poly_i), vect_poly_i)), error = function(e) NA)
-        ndvi_vals <- ndvi_vals[!is.na(ndvi_vals)]
-        mean_ndvi <- ifelse(length(ndvi_vals) > 0, round(mean(ndvi_vals, na.rm = TRUE), 3), NA_real_)
-      }
-
-      iso_wkt <- st_as_text(st_geometry(poly_i)[[1]])
-      gbif_summary <- tryCatch({
-        gbif_tab |>
-          filter(sql(glue("ST_Intersects(ST_GeomFromText(geom_wkt), ST_GeomFromText('{iso_wkt}'))"))) |>
-          summarise(
-            n_records = n(),
-            n_species = n_distinct(species),
-            n_birds   = n_distinct(case_when(class == "Aves"     ~ species, TRUE ~ NA_character_)),
-            n_mammals = n_distinct(case_when(class == "Mammalia" ~ species, TRUE ~ NA_character_)),
-            n_plants  = n_distinct(case_when(
-              class %in% c("Magnoliopsida", "Liliopsida", "Pinopsida", "Polypodiopsida",
-                           "Equisetopsida", "Bryopsida",  "Marchantiopsida") ~ species,
-              TRUE ~ NA_character_
-            ))
-          ) |>
-          collect()
-      }, error = function(e) NULL)
-      n_records <- if (!is.null(gbif_summary) && nrow(gbif_summary) > 0) gbif_summary$n_records[[1]] else 0L
-      n_species <- if (!is.null(gbif_summary) && nrow(gbif_summary) > 0) gbif_summary$n_species[[1]] else 0L
-      n_birds   <- if (!is.null(gbif_summary) && nrow(gbif_summary) > 0) gbif_summary$n_birds[[1]]   else 0L
-      n_mammals <- if (!is.null(gbif_summary) && nrow(gbif_summary) > 0) gbif_summary$n_mammals[[1]] else 0L
-      n_plants  <- if (!is.null(gbif_summary) && nrow(gbif_summary) > 0) gbif_summary$n_plants[[1]]  else 0L
-      
-      n_transit_stops <- NA_real_
-      transit_access_score <- NA_real_
-      freq_weighted_score <- NA_real_
-      mean_headway_iso <- NA_real_
-      nearest_stop_m <- NA_real_
-      nearest_stop_name <- NA_character_
-      
-      if (!is.null(gtfs_stops_sf)) {
-        inter_transit <- tryCatch(st_intersection(gtfs_stops_sf, poly_i), error = function(e) NULL)
-        n_transit_stops <- if (!is.null(inter_transit)) nrow(inter_transit) else 0
-        
-        dist_transit <- st_distance(poly_i, gtfs_stops_sf)
-        nearest_stop_m <- round(as.numeric(min(dist_transit)), 0)
-        nearest_stop_name <- gtfs_stops_sf$stop_name[which.min(dist_transit)]
-        
-        transit_access_score <- ifelse(iso_area_km2 > 0, round(n_transit_stops / iso_area_km2, 2), NA_real_)
-        
-        freq_weighted_score <- if (!is.null(inter_transit) &&
-                                   "mean_headway_min" %in% names(inter_transit) &&
-                                   nrow(inter_transit) > 0 &&
-                                   iso_area_km2 > 0) {
-          hw <- inter_transit$mean_headway_min
-          hw <- hw[!is.na(hw) & hw > 0]
-          if (length(hw) > 0) round(sum(60 / hw) / iso_area_km2, 2) else NA_real_
-        } else NA_real_
-        
-        mean_headway_iso <- if (!is.null(inter_transit) &&
-                                "mean_headway_min" %in% names(inter_transit) &&
-                                nrow(inter_transit) > 0) {
-          round(mean(inter_transit$mean_headway_min, na.rm = TRUE), 1)
-        } else NA_real_
-      }
-      
-      # Unique Muni route IDs whose shapes intersect this isochrone
-      n_unique_routes <- 0L
-      if (!is.null(gtfs_routes_sf)) {
-        routes_inter <- tryCatch(
-          st_intersection(gtfs_routes_sf[, "route_id"], poly_i),
-          error = function(e) NULL
-        )
-        n_unique_routes <- if (!is.null(routes_inter) && "route_id" %in% names(routes_inter)) {
-          length(unique(routes_inter$route_id))
-        } else 0L
-      }
-      
-      sampling_density_km2 <- ifelse(iso_area_km2 > 0, round(n_records / iso_area_km2, 2), NA_real_)
-      
-      mean_ciscore <- if (!is.null(cenv_sf)) {
-        tryCatch({
-          ce_inter <- st_intersection(cenv_sf, poly_i)
-          if (nrow(ce_inter) > 0) {
-            ce_inter$a <- as.numeric(st_area(st_transform(ce_inter, 3857)))
-            round(weighted.mean(ce_inter$CIscore, w = ce_inter$a, na.rm = TRUE), 1)
-          } else NA_real_
-        }, error = function(e) NA_real_)
-      } else NA_real_
-      
-      mean_traffic_pctl <- if (!is.null(cenv_sf)) {
-        tryCatch({
-          ce_inter <- st_intersection(cenv_sf, poly_i)
-          if (nrow(ce_inter) > 0) {
-            ce_inter$a <- as.numeric(st_area(st_transform(ce_inter, 3857)))
-            round(weighted.mean(ce_inter$Traffic_Pctl, w = ce_inter$a, na.rm = TRUE), 1)
-          } else NA_real_
-        }, error = function(e) NA_real_)
-      } else NA_real_
-      
-      mean_ej_score <- if (!is.null(sf_ej_sf)) {
-        tryCatch({
-          ej_inter <- st_intersection(sf_ej_sf, poly_i)
-          if (nrow(ej_inter) > 0) {
-            ej_inter$a <- as.numeric(st_area(st_transform(ej_inter, 3857)))
-            valid <- ej_inter[!is.na(ej_inter$score), ]
-            if (nrow(valid) > 0) {
-              round(weighted.mean(valid$score, w = valid$a, na.rm = TRUE), 1)
-            } else NA_real_
-          } else NA_real_
-        }, error = function(e) NA_real_)
-      } else NA_real_
-      
-      row_i <- data.frame(
-        Mode                   = pretty_mode(as.character(poly_i$mode[[1]])),
-        Time                   = as.numeric(poly_i$time[[1]]),
-        IsochroneArea_km2      = iso_area_km2,
-        DistToHotspot_km       = dist_hot_km,
-        DistToColdspot_km      = dist_cold_km,
-        EstimatedPopulation    = pop_total,
-        MedianIncome           = round(w_income, 2),
-        MeanNDVI               = mean_ndvi,
-        GBIF_Records           = n_records,
-        GBIF_Species           = n_species,
-        Bird_Species           = n_birds,
-        Mammal_Species         = n_mammals,
-        Plant_Species          = n_plants,
-        SamplingDensity_km2    = sampling_density_km2,
-        Greenspace_percent     = round(gs_percent, 2),
-        Transit_Stops          = n_transit_stops,
-        Unique_Muni_Routes     = n_unique_routes,
-        Transit_Access_Score   = transit_access_score,
-        Freq_Weighted_Score    = freq_weighted_score,
-        Mean_Headway_min       = mean_headway_iso,
-        Nearest_Stop_m         = nearest_stop_m,
-        Nearest_Stop_Name      = nearest_stop_name,
-        CalEnviro_CIscore      = mean_ciscore,
-        CalEnviro_Traffic_Pctl = mean_traffic_pctl,
-        SF_EJ_Score            = mean_ej_score,
-        closest_greenspace     = osm_greenspace_name_global,
-        closest_greenspace_dist_m = min_dist_val_global,
-        closest_rsf_program    = rsf_program_name_global,
-        closest_rsf_program_dist_m = min_rsf_dist_global,
-        stringsAsFactors       = FALSE
-      )
-      
-      results <- rbind(results, row_i)
-    }
-
-    }) # end withProgress
-
-    union_wkt <- st_as_text(st_geometry(st_union(iso_data))[[1]])
-    union_n_species <- tryCatch({
-      gbif_tab |>
-        filter(sql(glue("ST_Intersects(ST_GeomFromText(geom_wkt), ST_GeomFromText('{union_wkt}'))"))) |>
-        summarise(n_species = n_distinct(species)) |>
-        collect() |>
-        pull(n_species)
-    }, error = function(e) 0L)
-    
-    attr(results, "bio_percentile") <- round(100 * ecdf(cbg_vect_sf$unique_species)(union_n_species), 1)
-    
-    if (!is.null(gtfs_stops_sf)) {
-      sf_city_area_km2 <- 121.4
-      attr(results, "city_transit_score") <- round(nrow(gtfs_stops_sf) / sf_city_area_km2, 2)
-      attr(results, "mean_transit_score") <- round(mean(results$Transit_Access_Score, na.rm = TRUE), 2)
-      attr(results, "mean_transit_stops") <- round(mean(results$Transit_Stops, na.rm = TRUE), 1)
-      attr(results, "mean_muni_routes")   <- round(mean(results$Unique_Muni_Routes, na.rm = TRUE), 1)
-    } else {
-      attr(results, "city_transit_score") <- NA_real_
-      attr(results, "mean_transit_score") <- NA_real_
-      attr(results, "mean_transit_stops") <- NA_real_
-      attr(results, "mean_muni_routes")   <- NA_real_
-    }
-    
-    if (nrow(results) > 0) {
-      closest_gs <- results |>
-        filter(!is.na(closest_greenspace_dist_m)) |>
-        slice_min(closest_greenspace_dist_m, n = 1)
-      if (nrow(closest_gs) > 0) {
-        attr(results, "closest_greenspace") <- closest_gs$closest_greenspace[1]
-        attr(results, "closest_greenspace_dist_m") <- closest_gs$closest_greenspace_dist_m[1]
-      } else {
-        attr(results, "closest_greenspace") <- "None"
-        attr(results, "closest_greenspace_dist_m") <- NA_real_
-      }
-      
-      closest_rsf <- results |>
-        filter(!is.na(closest_rsf_program_dist_m)) |>
-        slice_min(closest_rsf_program_dist_m, n = 1)
-      if (nrow(closest_rsf) > 0) {
-        attr(results, "closest_rsf_program") <- closest_rsf$closest_rsf_program[1]
-        attr(results, "closest_rsf_program_dist_m") <- closest_rsf$closest_rsf_program_dist_m[1]
-      } else {
-        attr(results, "closest_rsf_program") <- "None"
-        attr(results, "closest_rsf_program_dist_m") <- NA_real_
-      }
-    }
-    
-    results
+    # Per-isochrone scoring lives in compute_iso_metrics() (Rscripts/iso_metrics.R),
+    # shared with the comparer tab. The chosen point drives the nearest-greenspace /
+    # nearest-RSF lookups; isolate() so moving the point alone doesn't recompute.
+    compute_iso_metrics(iso_data, isolate(chosen_point()), gbif_tab)
   })
   
   # ---------------------------------------------------------------------------
   # Biodiversity Access Index
   # ---------------------------------------------------------------------------
   biodiversity_access_index <- reactive({
-    df <- socio_data()
-    if (nrow(df) == 0) return(NULL)
-    
-    ref <- city_benchmarks
-    
-    eq_ref_inverted <- if (length(ref$ej) > 0) max(ref$ej, na.rm = TRUE) - ref$ej else numeric(0)
-    eq_obs_inverted <- ifelse(is.na(df$SF_EJ_Score), NA_real_, max(ref$ej, na.rm = TRUE) - df$SF_EJ_Score)
-    
-    tmp <- df |>
-      mutate(
-        Mobility_Access_std        = ecdf01(Transit_Access_Score, ref$transit_density),
-        Biodiversity_Potential_std = ecdf01(GBIF_Species, ref$biodiversity),
-        Observation_Intensity_std  = ecdf01(SamplingDensity_km2, ref$sampling),
-        Environmental_Quality_std  = ecdf01(MeanNDVI, ref$ndvi),
-        Greenspace_Cover_std       = ecdf01(Greenspace_percent, ref$greenspace_cover),
-        Equity_Context_std         = ecdf01(eq_obs_inverted, eq_ref_inverted),
-        Route_Access_std           = ecdf01(Unique_Muni_Routes, ref$route_access)
-      )
-    
-    tmp$BAI <- rowMeans(
-      tmp[, c(
-        "Mobility_Access_std",
-        "Biodiversity_Potential_std",
-        "Observation_Intensity_std",
-        "Environmental_Quality_std",
-        "Greenspace_Cover_std",
-        "Equity_Context_std",
-        "Route_Access_std"
-      )],
-      na.rm = TRUE
-    )
-    
-    tmp
+    # ECDF standardisation + composite BAI live in add_bai() (Rscripts/iso_metrics.R).
+    add_bai(socio_data(), city_benchmarks)
   })
   
   # ---------------------------------------------------------------------------
@@ -2802,85 +2462,8 @@ server <- function(input, output, session) {
   output$radarPlot <- renderPlot({
     df <- biodiversity_access_index()
     if (is.null(df) || nrow(df) == 0) return(NULL)
-    
-    radar_df <- df |>
-      mutate(
-        ModeTime = paste0(Mode, "_", Time, "m"),
-        `Stop\nDensity`     = Mobility_Access_std,
-        `Route\nDiversity`  = Route_Access_std,
-        `Species\nRichness` = Biodiversity_Potential_std,
-        `Obs.\nIntensity`   = Observation_Intensity_std,
-        `Vegetation\n(NDVI)`= Environmental_Quality_std,
-        `Greenspace\nCover` = Greenspace_Cover_std,
-        `EJ\nContext`       = Equity_Context_std
-      ) |>
-      select(
-        ModeTime,
-        `Stop\nDensity`,
-        `Route\nDiversity`,
-        `Species\nRichness`,
-        `Obs.\nIntensity`,
-        `Vegetation\n(NDVI)`,
-        `Greenspace\nCover`,
-        `EJ\nContext`
-      )
-    
-    radar_mat <- as.data.frame(radar_df[, -1])
-    rownames(radar_mat) <- radar_df$ModeTime
-    
-    radar_mat <- rbind(
-      rep(1, ncol(radar_mat)),
-      rep(0, ncol(radar_mat)),
-      radar_mat
-    )
-    
-    labels <- rownames(radar_mat)[-(1:2)]
-    line_cols <- mode_palette[gsub("_(.*)$", "", labels)]
-    line_cols[is.na(line_cols)] <- "#666666"
-    
-    # Extra margin so two-line axis labels aren't clipped
-    par(mar = c(2, 2, 3, 2))
-
-    fmsb::radarchart(
-      radar_mat,
-      axistype = 1,
-      pcol = line_cols,
-      plwd = 2,
-      plty = 1,
-      cglcol = "grey80",
-      cglty = 1,
-      cglwd = 0.8,
-      axislabcol = "grey40",
-      vlcex = 0.88,
-      title = "Biodiversity Access Index Profile"
-    )
-    
-    # Group subheader annotations — placed radially just beyond the axis labels.
-    # Axes (clockwise from top): 1=Stop Density, 2=Route Diversity,
-    # 3=Species Richness, 4=Obs. Intensity, 5=Vegetation NDVI,
-    # 6=Greenspace Cover, 7=EJ Context
-    n_ax  <- 7
-    angs  <- pi/2 - (0:(n_ax - 1)) * (2 * pi / n_ax)
-    cat_r <- 1.48  # radius just outside axis labels (~1.2–1.3)
-
-    text(cat_r * cos(mean(angs[1:2])), cat_r * sin(mean(angs[1:2])),
-         "Urban Access",           cex = 0.72, col = "#2166ac", font = 2, xpd = TRUE)
-    text(cat_r * cos(mean(angs[3:4])), cat_r * sin(mean(angs[3:4])),
-         "Biodiversity",           cex = 0.72, col = "#1b7837", font = 2, xpd = TRUE)
-    text(cat_r * cos(mean(angs[5:6])), cat_r * sin(mean(angs[5:6])),
-         "Environment",            cex = 0.72, col = "#762a83", font = 2, xpd = TRUE)
-    text(cat_r * cos(angs[7]),         cat_r * sin(angs[7]),
-         "Environmental\nJustice", cex = 0.72, col = "#b2182b", font = 2, xpd = TRUE)
-
-    legend(
-      "topright",
-      legend = labels,
-      col = line_cols,
-      lty = 1,
-      lwd = 2,
-      cex = 0.75,
-      bty = "n"
-    )
+    # Radar drawing lives in draw_radar() (Rscripts/iso_metrics.R), shared with the comparer.
+    draw_radar(df)
   })
   
   # ---------------------------------------------------------------------------
@@ -2928,7 +2511,218 @@ server <- function(input, output, session) {
       rownames = FALSE
     )
   })
-  
+
+  # ---------------------------------------------------------------------------
+  # Isochrone Comparer tab
+  # ---------------------------------------------------------------------------
+  # Two point pickers (A and B), one Compare button, two spider plots, and a
+  # difference table. Every score reuses the shared iso_metrics.R functions, so
+  # a comparison is computed exactly like the main Explorer tab. Nothing here
+  # runs until Compare is pressed (cmp_results is an eventReactive).
+
+  # One colour per point, reused everywhere (map marker, map isochrone, radar
+  # line) so Point A always reads green and Point B always reads blue.
+  cmp_color_a <- "#1b9e77"
+  cmp_color_b <- "#2c7fb8"
+
+  cmp_point_a <- reactiveVal(NULL)
+  cmp_point_b <- reactiveVal(NULL)
+
+  # Wire one side's map + geocoder to its point reactiveVal. Called once per side
+  # so the two pickers stay identical without duplicating the handler code.
+  setup_cmp_point <- function(map_id, geocoder_id, point_rv, marker_color) {
+    output[[map_id]] <- renderLeaflet({
+      leaflet() |>
+        addProviderTiles(providers$CartoDB.Positron) |>
+        setView(lng = -122.4194, lat = 37.7749, zoom = 12)
+    })
+
+    observeEvent(input[[paste0(map_id, "_click")]], {
+      click <- input[[paste0(map_id, "_click")]]
+      if (is.null(click)) return()
+      point_rv(c(lon = click$lng, lat = click$lat))
+      leafletProxy(map_id) |>
+        clearGroup("cmp_pt") |>
+        addCircleMarkers(lng = click$lng, lat = click$lat, radius = 7,
+                         color = marker_color, group = "cmp_pt")
+    })
+
+    observeEvent(input[[geocoder_id]], {
+      g <- input[[geocoder_id]]
+      if (is.null(g)) return()
+      xy <- geocoder_as_xy(g)
+      point_rv(c(lon = xy[1], lat = xy[2]))
+      leafletProxy(map_id) |>
+        clearGroup("cmp_pt") |>
+        addCircleMarkers(lng = xy[1], lat = xy[2], radius = 7,
+                         color = marker_color, group = "cmp_pt") |>
+        flyTo(lng = xy[1], lat = xy[2], zoom = 13)
+    })
+  }
+
+  setup_cmp_point("cmp_map_a", "cmp_geocoder_a", cmp_point_a, cmp_color_a)
+  setup_cmp_point("cmp_map_b", "cmp_geocoder_b", cmp_point_b, cmp_color_b)
+
+  # Build + score one side. Returns NULL if no isochrone could be built (e.g. a
+  # transit mode with no reachable stops) so the outputs can show a clear note.
+  # Keeps the isochrone sf so it can be drawn back onto the side's map.
+  cmp_score_side <- function(point, mode, time) {
+    iso <- build_isochrones(point, modes = mode, times = as.numeric(time))
+    if (is.null(iso) || nrow(iso) == 0) return(NULL)
+    metrics <- compute_iso_metrics(iso, point, gbif_tab)
+    list(
+      iso     = iso,
+      metrics = metrics,
+      bai     = add_bai(metrics, city_benchmarks),
+      label   = paste0(pretty_mode(mode), " ", time, " min")
+    )
+  }
+
+  cmp_results <- eventReactive(input$cmp_compare, {
+    pa <- cmp_point_a(); pb <- cmp_point_b()
+    validate(
+      need(!is.null(pa), "Place Point A (click its map or search an address)."),
+      need(!is.null(pb), "Place Point B (click its map or search an address).")
+    )
+    list(
+      a = cmp_score_side(pa, input$cmp_mode_a, input$cmp_time_a),
+      b = cmp_score_side(pb, input$cmp_mode_b, input$cmp_time_b)
+    )
+  })
+
+  # Flag for the conditionalPanel that reveals the comparison results. FALSE
+  # until Compare has produced a value (cmp_results errors before its first
+  # event, and on validation failure -- both caught here as "not ready").
+  output$cmp_ready <- reactive({
+    tryCatch(!is.null(cmp_results()), error = function(e) FALSE)
+  })
+  outputOptions(output, "cmp_ready", suspendWhenHidden = FALSE)
+
+  # Draw each side's isochrone back onto its picker map, and frame it. Fires only
+  # when Compare produced results (cmp_results is an eventReactive).
+  observeEvent(cmp_results(), {
+    res <- cmp_results()
+    draw_side_iso <- function(map_id, side, color) {
+      proxy <- leafletProxy(map_id) |> clearGroup("cmp_iso")
+      if (!is.null(side) && !is.null(side$iso)) {
+        bb <- as.numeric(sf::st_bbox(side$iso))
+        proxy |>
+          addPolygons(data = side$iso, group = "cmp_iso",
+                      color = color, weight = 2, fillColor = color, fillOpacity = 0.25) |>
+          fitBounds(bb[1], bb[2], bb[3], bb[4])
+      }
+    }
+    draw_side_iso("cmp_map_a", res$a, cmp_color_a)
+    draw_side_iso("cmp_map_b", res$b, cmp_color_b)
+  })
+
+  # One consolidated radar: Point A vs Point B on a single axis, coloured by point.
+  output$cmp_radar <- renderPlot({
+    res <- cmp_results()
+    rows <- list(); labs <- character(); cols <- character()
+    if (!is.null(res$a) && !is.null(res$a$bai)) {
+      rows <- c(rows, list(res$a$bai)); labs <- c(labs, paste0("Point A: ", res$a$label)); cols <- c(cols, cmp_color_a)
+    }
+    if (!is.null(res$b) && !is.null(res$b$bai)) {
+      rows <- c(rows, list(res$b$bai)); labs <- c(labs, paste0("Point B: ", res$b$label)); cols <- c(cols, cmp_color_b)
+    }
+    if (length(rows) == 0) {
+      plot.new(); title("No isochrones could be built for either point."); return()
+    }
+    draw_compare_radar(rows, labels = labs, colors = cols)
+  })
+
+  output$cmp_diff_table <- renderDT({
+    res <- cmp_results()
+
+    # Pull the comparison scalars from one side's scored result. The comparer
+    # builds one isochrone per side, so metrics has a single row we read directly.
+    side_scores <- function(side) {
+      if (is.null(side) || is.null(side$metrics)) {
+        return(list(transit = NA_real_, bio = NA_real_, bai = NA_real_,
+                    gbif = NA_real_, birds = NA_real_, mammals = NA_real_, plants = NA_real_,
+                    cienv = NA_real_, ej = NA_real_, income = NA_real_, gs_dist = NA_real_))
+      }
+      m <- side$metrics
+      list(
+        transit = attr(m, "mean_transit_score"),
+        bio     = attr(m, "bio_percentile"),
+        bai     = if (!is.null(side$bai)) round(mean(side$bai$BAI, na.rm = TRUE) * 100, 1) else NA_real_,
+        gbif    = m$GBIF_Species[1],
+        birds   = m$Bird_Species[1],
+        mammals = m$Mammal_Species[1],
+        plants  = m$Plant_Species[1],
+        cienv   = m$CalEnviro_CIscore[1],
+        ej      = m$SF_EJ_Score[1],
+        income  = m$MedianIncome[1],
+        gs_dist = attr(m, "closest_greenspace_dist_m")
+      )
+    }
+
+    a <- side_scores(res$a)
+    b <- side_scores(res$b)
+
+    # Per-type value + signed (B - A) difference formatters; em dash for missing.
+    show_num   <- function(x) if (is.null(x) || is.na(x)) "—" else as.character(round(x, 1))
+    show_int   <- function(x) if (is.null(x) || is.na(x)) "—" else as.character(as.integer(round(x)))
+    show_money <- function(x) if (is.null(x) || is.na(x)) "—" else scales::dollar(x)
+    diff_num   <- function(x, y) if (is.null(x) || is.null(y) || is.na(x) || is.na(y)) "—" else sprintf("%+.1f", y - x)
+    diff_int   <- function(x, y) if (is.null(x) || is.null(y) || is.na(x) || is.na(y)) "—" else sprintf("%+d", as.integer(round(y - x)))
+    diff_money <- function(x, y) if (is.null(x) || is.null(y) || is.na(x) || is.na(y)) "—" else paste0(if (y - x >= 0) "+" else "-", scales::dollar(abs(y - x)))
+
+    tbl <- data.frame(
+      Metric = c(
+        "Transit Access Score (stops/km²)",
+        "Biodiversity Score (percentile)",
+        "Biodiversity Access Index (/100)",
+        "GBIF Species",
+        "Bird Species",
+        "Mammal Species",
+        "Plant Species",
+        "CalEnviroScreen (CI Score)",
+        "SF EJ Score",
+        "Median Income",
+        "Closest Greenspace Distance (m)"
+      ),
+      "Point A" = c(
+        show_num(a$transit), show_num(a$bio), show_num(a$bai),
+        show_int(a$gbif), show_int(a$birds), show_int(a$mammals), show_int(a$plants),
+        show_num(a$cienv), show_num(a$ej), show_money(a$income), show_num(a$gs_dist)
+      ),
+      "Point B" = c(
+        show_num(b$transit), show_num(b$bio), show_num(b$bai),
+        show_int(b$gbif), show_int(b$birds), show_int(b$mammals), show_int(b$plants),
+        show_num(b$cienv), show_num(b$ej), show_money(b$income), show_num(b$gs_dist)
+      ),
+      "Difference" = c(
+        diff_num(a$transit, b$transit),
+        diff_num(a$bio, b$bio),
+        diff_num(a$bai, b$bai),
+        diff_int(a$gbif, b$gbif),
+        diff_int(a$birds, b$birds),
+        diff_int(a$mammals, b$mammals),
+        diff_int(a$plants, b$plants),
+        diff_num(a$cienv, b$cienv),
+        diff_num(a$ej, b$ej),
+        diff_money(a$income, b$income),
+        diff_num(a$gs_dist, b$gs_dist)
+      ),
+      check.names = FALSE,
+      stringsAsFactors = FALSE
+    )
+
+    DT::datatable(
+      tbl,
+      rownames = FALSE,
+      options = list(dom = "t", ordering = FALSE, paging = FALSE)
+    ) |>
+      # Same A = green / B = blue scheme as the maps and radar, so the columns
+      # tie back to the points visually.
+      DT::formatStyle("Point A", color = cmp_color_a, fontWeight = "bold") |>
+      DT::formatStyle("Point B", color = cmp_color_b, fontWeight = "bold") |>
+      DT::formatStyle("Difference", fontWeight = "bold", backgroundColor = "#fff8e1")
+  })
+
 } # end server
 
 # =============================================================================
