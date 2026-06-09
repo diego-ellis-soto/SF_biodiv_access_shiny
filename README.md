@@ -33,6 +33,7 @@ Users select a location anywhere in San Francisco — either by clicking the map
 | Tab | Description |
 |-----|-------------|
 | **Isochrone Explorer** | Interactive map, isochrone generation, BAI spider plot, summary table, and metric plots |
+| **Isochrone Comparer** | Pick two locations (one mode + travel time each) and compare them side by side: two BAI spider plots plus a difference table (transit score, biodiversity score, BAI, closest greenspace). Loads only when opened. |
 | **GBIF Summaries** | Filter GBIF records by taxonomic class and family within the isochrone; species richness vs. sampling effort plot |
 | **Community Science** | Map and table of partner community organizations |
 | **About** | Full methodology, data sources, transport mode descriptions, and BAI explanation |
@@ -95,12 +96,13 @@ All axes scaled 0–1. BAI = unweighted mean of all seven standardized component
 
 ```
 SF_biodiv_access_shiny/
-├── app.R                 # Main app (sources Rscripts/setup_unified.R)
+├── app.R                 # Main app (sources Rscripts/setup_unified.R at startup)
 ├── Dockerfile            # HF Spaces: install.r + shiny::runApp('app.R', …)
 ├── install.r             # R package list for Docker
 ├── www/                  # Static assets (e.g. app_pastel.css, logos)
 ├── Rscripts/
-│   ├── setup_unified.R   # Loads data: local data/cached + HuggingFace fallback
+│   ├── setup_unified.R   # Loads all app data: local data/cached + HuggingFace fallback
+│   ├── iso_metrics.R     # Shared point→isochrone→metrics→BAI→radar functions (used by both isochrone tabs)
 │   └── prep/             # One-off builds → data/output/ (see run_all_prep.R)
 └── data/
     ├── cached/           # Downloaded / runtime cache (often gitignored)
@@ -129,7 +131,7 @@ SF_biodiv_access_shiny/
 | RSF Program Projects | RSF Initiative | GeoPackage | Downloaded from HuggingFace at startup |
 
 **Remote data** is hosted on HuggingFace at  
-[`boettiger-lab/sf_biodiv_access`](https://huggingface.co/datasets/boettiger-lab/sf_biodiv_access) and cached locally in `data/cached/` by `setup_unified.R`.
+[`boettiger-lab/sf_biodiv_access`](https://huggingface.co/datasets/boettiger-lab/sf_biodiv_access) and cached locally in `data/cached/` by `setup_unified.R`. The two most expensive products — the CBG × greenspace intersection and the transit-routing timetable — are precomputed in `Rscripts/prep/` and read at startup rather than recomputed, so the app starts quickly.
 
 **GBIF queries** use [DuckDB](https://duckdb.org/) with the spatial extension, querying a local `.parquet` file directly via SQL `ST_Intersects` — avoiding loading the full dataset into memory.
 
@@ -176,7 +178,7 @@ Typical startup time: **~6–12 seconds** depending on whether caches exist.
 
 ## Cloud Deployment (HuggingFace Spaces)
 
-The app is deployed via Docker on HuggingFace Spaces using `app.R` + `Rscripts/setup_unified.R`. Data is downloaded from the HuggingFace dataset repository into `data/cached/` at startup — no large files need to be bundled in the image.
+The app is deployed via Docker on HuggingFace Spaces using `app.R` + `Rscripts/setup_unified.R`. Data is downloaded from the HuggingFace dataset repository into `data/cached/` at startup — so no large files need to be bundled in the image.
 
 See `Dockerfile` for the deployment configuration.
 
