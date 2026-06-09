@@ -33,6 +33,7 @@ Users select a location anywhere in San Francisco — either by clicking the map
 | Tab | Description |
 |-----|-------------|
 | **Isochrone Explorer** | Interactive map, isochrone generation, BAI spider plot, summary table, and metric plots |
+| **Isochrone Comparer** | Pick two locations (one mode + travel time each) and compare them side by side: two BAI spider plots plus a difference table (transit score, biodiversity score, BAI, closest greenspace). Loads only when opened. |
 | **GBIF Summaries** | Filter GBIF records by taxonomic class and family within the isochrone; species richness vs. sampling effort plot |
 | **Community Science** | Map and table of partner community organizations |
 | **About** | Full methodology, data sources, transport mode descriptions, and BAI explanation |
@@ -101,6 +102,7 @@ SF_biodiv_access_shiny/
 ├── www/                  # Static assets (e.g. app_pastel.css, logos)
 ├── Rscripts/
 │   ├── setup_unified.R   # Loads all app data: local data/cached + HuggingFace fallback
+│   ├── iso_metrics.R     # Shared point→isochrone→metrics→BAI→radar functions (used by both isochrone tabs)
 │   └── prep/             # One-off builds → data/output/ (see run_all_prep.R)
 └── data/
     ├── cached/           # Downloaded / runtime cache (often gitignored)
